@@ -1,18 +1,3 @@
-# Copyright 2022 Dynatrace LLC
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#      https://www.apache.org/licenses/LICENSE-2.0
-
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-
-
 import logging
 import os
 import json
@@ -25,7 +10,6 @@ from log.forwarding import log_forwarding_rules
 from log.sinks import dynatrace
 from utils import aws_appconfig_extension_helpers as aws_appconfig_helpers
 from version import get_version
-
 
 logger = logging.getLogger()
 logger.setLevel(os.getenv("LOGGING_LEVEL", "INFO"))
@@ -60,16 +44,13 @@ def generate_execution_timeout_batch_item_failures(index: int, batch_item_failur
     Gets the current batch_item_failures dict and adds the messages that were left unprocessed due
     to execution timeout
     '''
-
     for message in messages[index:]:
         batch_item_failures['batchItemFailures'].append(
             {'itemIdentifier': message['messageId']})
-
     return batch_item_failures
 
 
 def reload_rules(rules_type: str):
-
     if os.environ['LOG_FORWARDER_CONFIGURATION_LOCATION'] == "aws-appconfig":
         # load globals
         glob = globals()
@@ -111,127 +92,138 @@ def lambda_handler(event, context):
         'batchItemFailures': []
     }
 
+    # Iterate through the messages in the event
     for index, message in enumerate(event['Records']):
-
-        # Empty the sinks in case some content was left due to errors and initialize
-        # num_batch to 1.
         dynatrace.empty_sinks(dynatrace_sinks)
 
         try:
-            s3_notification = json.loads(message['body'])
-        except json.decoder.JSONDecodeError as exception:
-            logging.warning(
-                'Dropping message %s, body is not valid JSON', exception.doc)
-            continue
+            # Check if the message is SNS or SQS format
+            if 'Sns' in message:
+                # SNS message
+                sns_message = json.loads(message['Sns']['Message'])
+                bucket_name = sns_message['Records'][0]['s3']['bucket']['name']
+                key_name = sns_message['Records'][0]['s3']['object']['key']
 
-        bucket_name = s3_notification['detail']['bucket']['name']
-        key_name = s3_notification['detail']['object']['key']
-
-        logger.info(
-            'Processing object s3://%s/%s; posted by %s',
-            bucket_name, key_name, s3_notification['detail']['requester'])
-
-        # Catch all exception. If anything fails, add messageId to batchItemFailures
-        try:
-            matched_log_forwarding_rule = log_forwarding_rules.get_matching_log_forwarding_rule(
-                bucket_name, key_name, defined_log_forwarding_rules)
-
-            # if no matching forwarding rules, drop message
-            if matched_log_forwarding_rule is None:
-                logger.info(
-                    'Dropping object. s3://%s/%s doesn\'t match any forwarding rule',
-                    bucket_name, key_name)
-                metrics.add_metric(
-                    name='DroppedObjectsNotMatchingFwdRules', unit=MetricUnit.Count, value=1)
-                continue
-
-            logger.debug('Object s3://%s/%s matched log forwarding rule %s',
-                         bucket_name, key_name, matched_log_forwarding_rule.name)
-
-            user_defined_log_annotations = matched_log_forwarding_rule.annotations
-            logger.debug('User defined annotations: %s',
-                         user_defined_log_annotations)
-
-            matched_log_processing_rule = log_processing_rules.lookup_processing_rule(
-                matched_log_forwarding_rule.source,
-                matched_log_forwarding_rule.source_name,
-                defined_log_processing_rules,
-                key_name)
-
-            if matched_log_processing_rule is not None:
-                log_object_destination_sinks = []
-
-                for sink_id in matched_log_forwarding_rule.sinks:
-                    try:
-                        log_object_destination_sinks.append(
-                            dynatrace_sinks[sink_id])
-                    except KeyError:
-                        logger.warning('Invalid sink id %s defined on log forwarding rule %s in bucket %s.',
-                                       sink_id, matched_log_forwarding_rule.name, bucket_name)
-
-                if not log_object_destination_sinks:
-                    logger.error('There are no valid sinks defined in log forwarding rule %s in bucket %s.',
-                                 matched_log_forwarding_rule.name, bucket_name)
-                    metrics.add_metric(name="LogFilesSkipped",
-                                       unit=MetricUnit.Count, value=1)
-                    continue
-
-                processing.process_log_object(
-                    matched_log_processing_rule, bucket_name, key_name, s3_notification['region'],
-                    log_object_destination_sinks, context,
-                    user_defined_annotations=user_defined_log_annotations,
-                    session=boto3_session
-                )
-
-                # Iterate through all sinks and flush
-                for dynatrace_sink in log_object_destination_sinks:
-                    dynatrace_sink.flush()
-
-                metrics.add_metric(name='LogFilesProcessed',
-                                   unit=MetricUnit.Count, value=1)
+            elif 'body' in message:
+                # SQS message
+                sqs_message = json.loads(message['body'])
+                bucket_name = sqs_message['Records'][0]['s3']['bucket']['name']
+                key_name = sqs_message['Records'][0]['s3']['object']['key']
 
             else:
-                logger.warning('Could not find a matching log processing rule for source %s and key %s. Skipping...',
-                               matched_log_forwarding_rule.source, key_name)
-                metrics.add_metric(name="LogFilesSkipped",
-                                   unit=MetricUnit.Count, value=1)
+                logger.warning("Unrecognized message format. Skipping message.")
+                continue
 
-        except UnicodeDecodeError:
-            logger.exception(
-                'Error decoding log object. Log contains non-UTF-8 characters. Dropping object s3://%s/%s', bucket_name, key_name
-            )
-            metrics.add_metric(
-                name='DroppedObjectsDecodingErrors', unit=MetricUnit.Count, value=1)
+            logger.info('Processing object s3://%s/%s', bucket_name, key_name)
 
-        except processing.NotEnoughExecutionTimeRemaining:
-            logger.exception(
-                'Unable to process log file s3://%s/%s with remaining Lambda execution time. %s total non-processed log files in batch',
-                bucket_name, key_name, (len(event['Records']) - index)
-            )
+            process_s3_object(bucket_name, key_name)
 
-            metrics.add_metric(
-                name='NotEnoughExecutionTimeRemainingErrors', unit=MetricUnit.Count, value=1)
+        except Exception as ex:
+            logger.error("Failed processing message for bucket: %s, key: %s due to %s",
+                         bucket_name if 'bucket_name' in locals() else "unknown",
+                         key_name if 'key_name' in locals() else "unknown",
+                         str(ex))
 
-            total_batch_item_failures = generate_execution_timeout_batch_item_failures(
-                index, batch_item_failures, event['Records'])
+            batch_item_failures['batchItemFailures'].append({
+                'itemIdentifier': message['messageId']
+            })
 
-            metrics.add_metric(name='LogProcessingFailures', unit=MetricUnit.Count, value=len(
-                total_batch_item_failures['batchItemFailures']))
+    return batch_item_failures
 
-            logger.debug(json.dumps(batch_item_failures, indent=2))
 
-            return total_batch_item_failures
+# Catch all exception. If anything fails, add messageId to batchItemFailures
+try:
+    matched_log_forwarding_rule = log_forwarding_rules.get_matching_log_forwarding_rule(
+        bucket_name, key_name, defined_log_forwarding_rules)
 
-        except Exception:
-            logger.exception(
-                'Error processing message %s', message['messageId'])
+    # if no matching forwarding rules, drop message
+    if matched_log_forwarding_rule is None:
+        logger.info(
+            'Dropping object. s3://%s/%s doesn\'t match any forwarding rule',
+            bucket_name, key_name)
+        metrics.add_metric(
+            name='DroppedObjectsNotMatchingFwdRules', unit=MetricUnit.Count, value=1)
+        continue
 
-            batch_item_failures['batchItemFailures'].append(
-                {'itemIdentifier': message['messageId']})
+    logger.debug('Object s3://%s/%s matched log forwarding rule %s',
+                 bucket_name, key_name, matched_log_forwarding_rule.name)
+
+    user_defined_log_annotations = matched_log_forwarding_rule.annotations
+    logger.debug('User defined annotations: %s',
+                 user_defined_log_annotations)
+
+    matched_log_processing_rule = log_processing_rules.lookup_processing_rule(
+        matched_log_forwarding_rule.source,
+        matched_log_forwarding_rule.source_name,
+        defined_log_processing_rules,
+        key_name)
+
+    if matched_log_processing_rule is not None:
+        log_object_destination_sinks = []
+
+        for sink_id in matched_log_forwarding_rule.sinks:
+            try:
+                log_object_destination_sinks.append(
+                    dynatrace_sinks[sink_id])
+            except KeyError:
+                logger.warning('Invalid sink id %s defined on log forwarding rule %s in bucket %s.',
+                               sink_id, matched_log_forwarding_rule.name, bucket_name)
+
+        if not log_object_destination_sinks:
+            logger.error('There are no valid sinks defined in log forwarding rule %s in bucket %s.',
+                         matched_log_forwarding_rule.name, bucket_name)
+            metrics.add_metric(name="LogFilesSkipped",
+                               unit=MetricUnit.Count, value=1)
+            continue
+
+        processing.process_log_object(
+            matched_log_processing_rule, bucket_name, key_name, sns_message['region'],
+            log_object_destination_sinks, context,
+            user_defined_annotations=user_defined_log_annotations,
+            session=boto3_session
+        )
+
+        # Iterate through all sinks and flush
+        for dynatrace_sink in log_object_destination_sinks:
+            dynatrace_sink.flush()
+
+        metrics.add_metric(name='LogFilesProcessed',
+                           unit=MetricUnit.Count, value=1)
+
+    else:
+        logger.warning('Could not find a matching log processing rule for source %s and key %s. Skipping...',
+                       matched_log_forwarding_rule.source, key_name)
+        metrics.add_metric(name="LogFilesSkipped",
+                           unit=MetricUnit.Count, value=1)
+
+except UnicodeDecodeError:
+    logger.exception(
+        'Error decoding log object. Log contains non-UTF-8 characters. Dropping object s3://%s/%s', bucket_name, key_name
+    )
+    metrics.add_metric(
+        name='DroppedObjectsDecodingErrors', unit=MetricUnit.Count, value=1)
+
+except processing.NotEnoughExecutionTimeRemaining:
+    logger.exception(
+        'Unable to process log file s3://%s/%s with remaining Lambda execution time. %s total non-processed log files in batch',
+        bucket_name, key_name, (len(event['Records']) - index)
+    )
+
+    metrics.add_metric(
+        name='NotEnoughExecutionTimeRemainingErrors', unit=MetricUnit.Count, value=1)
+
+    total_batch_item_failures = generate_execution_timeout_batch_item_failures(
+        index, batch_item_failures, event['Records'])
+
+    metrics.add_metric(name='LogProcessingFailures', unit=MetricUnit.Count, value=len(
+        total_batch_item_failures['batchItemFailures']))
 
     logger.debug(json.dumps(batch_item_failures, indent=2))
 
-    metrics.add_metric(name='LogProcessingFailures', unit=MetricUnit.Count, value=len(
-        batch_item_failures['batchItemFailures']))
+    return total_batch_item_failures
 
-    return batch_item_failures
+except Exception:
+    logger.exception(
+        'Error processing message %s', message['messageId'])
+
+    batch_item_failures

@@ -1,0 +1,73 @@
+version: 1
+rules:
+  - name: flatten-cloudtrail
+    type: content
+    pattern:
+      match: ".*"
+    actions:
+      - extract:
+          source: content
+          target: event
+          format: json
+      - set:
+          field: log.source
+          value: "aws.cloudtrail"
+      - set:
+          field: cloud.aws.account_id
+          valueFrom: event.recipientAccountId
+      - set:
+          field: cloud.aws.region
+          valueFrom: event.awsRegion
+      - set:
+          field: identity.user
+          valueFrom: event.userIdentity.arn
+      - set:
+          field: resource.name
+          valueFrom: event.requestParameters.instancesSet.items[0].instanceId
+      - set:
+          field: error.message
+          valueFrom: event.errorMessage
+
+  - name: parse-cloudfront
+    type: content
+    pattern:
+      match: ".*"
+    actions:
+      - extract:
+          source: content
+          target: parsed
+          format: w3c
+          delimiter: " "
+          keys:
+            - date
+            - time
+            - edgeLocation
+            - bytesSent
+            - clientIP
+            - edgeHost
+            - method
+            - uri
+            - status
+            - referer
+            - userAgent
+      - set:
+          field: log.source
+          value: "aws.cloudfront"
+      - set:
+          field: network.client.ip
+          valueFrom: parsed.clientIP
+      - set:
+          field: http.method
+          valueFrom: parsed.method
+      - set:
+          field: http.url
+          valueFrom: parsed.uri
+      - set:
+          field: http.status
+          valueFrom: parsed.status
+      - set:
+          field: user.agent
+          valueFrom: parsed.userAgent
+      - set:
+          field: aws.edge.location
+          valueFrom: parsed.edgeLocation

@@ -1,7 +1,7 @@
-
 import logging
 import os
 import json
+import re
 import boto3
 from aws_lambda_powertools import Metrics
 from aws_lambda_powertools.metrics import MetricUnit
@@ -41,8 +41,6 @@ def lambda_handler(event, context):
         dynatrace.empty_sinks(dynatrace_sinks)
 
         try:
-            # 🟡 Step 1: SNS-wrapped SQS Message
-            logger.info("Now processing SNS message received in SQS queue")
             sns_message = json.loads(message['body'])
             if 'Message' in sns_message:
                 payload = json.loads(sns_message['Message'])
@@ -53,17 +51,13 @@ def lambda_handler(event, context):
             continue
 
         try:
-            # 🟢 Step 2: EventBridge S3-style detail-based payload
             if 'detail' in payload:
-                logger.info("This appears to be an EventBridge-style message with 'detail.bucket.name'")
                 bucket_name = payload['detail']['bucket']['name']
                 key_name = payload['detail']['object']['key']
                 source_context = payload['detail'].get('requester', 'unknown')
                 region = payload.get('region', 'unknown')
 
-            # 🔵 Step 3: Normal S3 PUT notifications from SNS
             elif 'Records' in payload and 's3' in payload['Records'][0]:
-                logger.info("S3 notification-style message detected with Records -> s3.bucket.name")
                 bucket_name = payload['Records'][0]['s3']['bucket']['name']
                 key_name = payload['Records'][0]['s3']['object']['key']
                 source_context = payload['Records'][0].get('eventSource', 'aws:s3')
@@ -73,11 +67,18 @@ def lambda_handler(event, context):
                 logger.warning("Unsupported event structure. Skipping message.")
                 continue
 
+            # Only allow CloudFront logs from this specific bucket
             if bucket_name != "sf-infosec-cloudfront-logs":
                 logger.info('Skipping object s3://%s/%s; bucket not whitelisted.', bucket_name, key_name)
                 continue
 
-            logger.info('Processing object s3://%s/%s; source: %s',
+            # ✅ Enforce CloudFront prefix pattern: cloudfront/<12-digit-id>/<name>/
+            cloudfront_key_pattern = re.compile(r'^cloudfront/\d{12}/[^/]+/')
+            if not cloudfront_key_pattern.match(key_name):
+                logger.info('Skipping object s3://%s/%s; key does not match CloudFront log prefix pattern.', bucket_name, key_name)
+                continue
+
+            logger.info('✅ Processing SNS or EventBridge message via SQS for object s3://%s/%s; source: %s',
                         bucket_name, key_name, source_context)
 
             log_object_destination_sinks = list(dynatrace_sinks.values())

@@ -1,3 +1,4 @@
+
 import logging
 import os
 import json
@@ -40,6 +41,8 @@ def lambda_handler(event, context):
         dynatrace.empty_sinks(dynatrace_sinks)
 
         try:
+            # 🟡 Step 1: SNS-wrapped SQS Message
+            logger.info("Now processing SNS message received in SQS queue")
             sns_message = json.loads(message['body'])
             if 'Message' in sns_message:
                 payload = json.loads(sns_message['Message'])
@@ -50,13 +53,17 @@ def lambda_handler(event, context):
             continue
 
         try:
+            # 🟢 Step 2: EventBridge S3-style detail-based payload
             if 'detail' in payload:
+                logger.info("This appears to be an EventBridge-style message with 'detail.bucket.name'")
                 bucket_name = payload['detail']['bucket']['name']
                 key_name = payload['detail']['object']['key']
                 source_context = payload['detail'].get('requester', 'unknown')
                 region = payload.get('region', 'unknown')
 
+            # 🔵 Step 3: Normal S3 PUT notifications from SNS
             elif 'Records' in payload and 's3' in payload['Records'][0]:
+                logger.info("S3 notification-style message detected with Records -> s3.bucket.name")
                 bucket_name = payload['Records'][0]['s3']['bucket']['name']
                 key_name = payload['Records'][0]['s3']['object']['key']
                 source_context = payload['Records'][0].get('eventSource', 'aws:s3')

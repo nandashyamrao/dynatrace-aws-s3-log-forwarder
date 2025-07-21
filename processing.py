@@ -1,150 +1,89 @@
-
-# Updated CloudFront log parsing version of processing.py
-
-# Copyright 2022 Dynatrace LLC
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#      https://www.apache.org/licenses/LICENSE-2.0
-
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-
 import logging
-from os import environ
-import sys
-import time
-import json
 import gzip
 import boto3
-from aws_lambda_powertools import Metrics
-from aws_lambda_powertools.metrics import MetricUnit
-
-from utils.helpers import ENCODING
+import time
 
 logger = logging.getLogger()
-metrics = Metrics()
-
-EXECUTION_REMAINING_TIME_LIMIT = 10000
-
-cloudfront_fields = [
-    "date", "time", "x-edge-location", "sc-bytes", "c-ip", "cs-method", "cs(Host)",
-    "cs-uri-stem", "sc-status", "cs(Referer)", "cs(User-Agent)", "cs-uri-query",
-    "cs(Cookie)", "x-edge-result-type", "x-edge-request-id", "x-host-header",
-    "cs-protocol", "cs-bytes", "time-taken", "x-forwarded-for", "ssl-protocol",
-    "ssl-cipher", "x-edge-response-result-type", "cs-protocol-version", "fle-status",
-    "fle-encrypted-fields", "c-port", "time-to-first-byte", "x-edge-detailed-result-type",
-    "sc-content-type", "sc-content-len", "sc-range-start", "sc-range-end"
-]
-
-def _get_context_log_attributes(bucket: str, key: str):
-    return {
-        'log.source.aws.s3.bucket.name': bucket,
-        'log.source.aws.s3.key.name': key,
-        'cloud.log_forwarder': environ['FORWARDER_FUNCTION_ARN']
-    }
-
-def get_log_entry_size(log_entry):
-    if isinstance(log_entry, dict):
-        size = sys.getsizeof(json.dumps(log_entry).encode(ENCODING))
-    elif isinstance(log_entry, bytes):
-        size = sys.getsizeof(log_entry)
-    else:
-        logger.warning("Can't determine the size of the log entry")
-        size = 0
-    return size
 
 def process_log_object(
-    log_processing_rule,
-    bucket: str,
-    key: str,
-    bucket_region: str,
-    log_sinks: list,
-    lambda_context,
-    user_defined_annotations: dict = None,
-    session: boto3.Session = None
+    log_processing_rule, bucket, key, bucket_region, log_sinks,
+    lambda_context, user_defined_annotations=None, session=None
 ):
-    start_time = time.time()
+    """
+    Processes a CloudFront log object from S3 and sends each distinct field as a separate attribute to each sink.
+    - Dynamically parses the header line for field names
+    - Maps each log line to those names
+    - Adds context and user annotations
+    - Sends to sinks (e.g., Dynatrace) with all fields as columns
+    """
 
+    start_time = time.time()
     if not session:
-        session = boto3._get_default_session()
+        session = boto3.Session()
 
     if user_defined_annotations is None:
         user_defined_annotations = {}
 
+    # Get the object from S3
     s3_client = session.client('s3')
-    log_obj_http_response = s3_client.get_object(Bucket=bucket, Key=key)
-    log_obj_http_response_body = log_obj_http_response['Body']
-    log_obj_http_response_content_encoding = log_obj_http_response.get('ContentEncoding', '').lower()
+    obj = s3_client.get_object(Bucket=bucket, Key=key)
+    body = obj['Body']
 
-    logger.debug("s3://%s/%s Object size: %i KB", bucket, key, log_obj_http_response['ContentLength'] / 1024)
-
-    if key.endswith('.gz') or log_obj_http_response_content_encoding == 'gzip':
-        log_stream = gzip.GzipFile(mode='rb', fileobj=log_obj_http_response_body)
+    # Handle gzip
+    if key.endswith('.gz'):
+        log_stream = gzip.GzipFile(fileobj=body)
     else:
-        log_stream = log_obj_http_response_body
+        log_stream = body
 
-    log_entries = log_stream if hasattr(log_stream, 'readline') else log_stream.iter_lines()
+    cloudfront_fields = []
+    num_processed = 0
+    for line in log_stream:
+        if isinstance(line, bytes):
+            line = line.decode('utf-8')
+        line = line.strip()
 
-    context_log_attributes = {}
-    context_log_attributes.update(user_defined_annotations)
-    context_log_attributes.update(_get_context_log_attributes(bucket, key))
-
-    for log_sink in log_sinks:
-        log_sink.set_s3_source(bucket, key)
-
-    num_log_entries = 0
-    decompressed_log_object_size = 0
-
-    for log_entry in log_entries:
-        dt_log_message = {}
-        if isinstance(log_entry, bytes):
-            log_entry = log_entry.decode(ENCODING)
-        if not log_entry or log_entry.startswith('#'):
+        # Dynamically parse header for field names
+        if line.startswith('#'):
+            # Field definition line is "# Fields: ..."
+            if line.lower().startswith("# fields:"):
+                # Split after colon and strip/normalize
+                cloudfront_fields = line.split(":", 1)[-1].strip().split()
+                logger.debug(f"CloudFront fields parsed: {cloudfront_fields}")
+            continue
+        if not line or not cloudfront_fields:
             continue
 
-        decompressed_log_object_size += len(log_entry.encode(ENCODING))
-        parts = log_entry.split('\t')
-        if len(parts) < len(cloudfront_fields):
-            continue
+        # Split log line into fields and map to names
+        values = line.split('\t')
+        log_entry = {}
 
-        cloudfront_log_dict = dict(zip(cloudfront_fields, parts))
+        # Only map if the number of fields matches
+        for idx, field_name in enumerate(cloudfront_fields):
+            if idx < len(values):
+                log_entry[field_name] = values[idx]
+            else:
+                log_entry[field_name] = None  # Fill missing values with None
 
-        dt_log_message['content'] = log_entry
-        dt_log_message.update(context_log_attributes)
+        # Add context and annotations
+        log_entry.update({
+            "aws.s3.bucket.name": bucket,
+            "aws.s3.key.name": key,
+            "aws.region": bucket_region,
+            "cloudfront_raw": line,  # Optionally keep original line
+        })
+        log_entry.update(user_defined_annotations)
 
-        dt_log_message["http.status_code"] = cloudfront_log_dict.get("sc-status")
-        dt_log_message["http.url.path"] = cloudfront_log_dict.get("cs-uri-stem")
-        dt_log_message["user.agent"] = cloudfront_log_dict.get("cs(User-Agent)")
-        dt_log_message["duration.ms"] = float(cloudfront_log_dict.get("time-taken", 0)) * 1000
-        dt_log_message["bytes.sent"] = int(cloudfront_log_dict.get("sc-bytes", 0))
-        dt_log_message["client.ip"] = cloudfront_log_dict.get("c-ip")
-        dt_log_message["x-edge-location"] = cloudfront_log_dict.get("x-edge-location")
-        dt_log_message["cloudfront.request_id"] = cloudfront_log_dict.get("x-edge-request-id")
+        # Send to all sinks (each field is a separate column/attribute)
+        for sink in log_sinks:
+            sink.push(log_entry)
 
-        dt_log_message["aws.region"] = bucket_region
+        num_processed += 1
 
-        for log_sink in log_sinks:
-            log_sink.push(dt_log_message)
+        # Optionally: check remaining time for large files
+        if num_processed % 1000 == 0 and hasattr(lambda_context, "get_remaining_time_in_millis"):
+            if lambda_context.get_remaining_time_in_millis() < 10000:
+                logger.warning(f"Not enough time left to process s3://{bucket}/{key}")
+                break
 
-        num_log_entries += 1
-
-        if num_log_entries % 1000 == 0 and lambda_context.get_remaining_time_in_millis() <= EXECUTION_REMAINING_TIME_LIMIT:
-            raise NotEnoughExecutionTimeRemaining
-
-    logger.info("Total CloudFront log entries processed: %s", str(num_log_entries))
-
-    end_time = time.time()
-    metrics.add_metric(name='LogProcessingTime', unit=MetricUnit.Seconds, value=(end_time - start_time))
-    metrics.add_metric(name='ReceivedUncompressedLogFileSize', unit=MetricUnit.Bytes, value=decompressed_log_object_size)
-    metrics.add_metric(name='LogEntriesProcessed', unit=MetricUnit.Count, value=num_log_entries, dimensions={"bucket": bucket})
-
-    return num_log_entries
-
-class NotEnoughExecutionTimeRemaining(Exception):
-    pass
+    logger.info(f"Processed {num_processed} CloudFront log entries from s3://{bucket}/{key}")
+    return num_processed

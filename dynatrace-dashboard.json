@@ -1,0 +1,203 @@
+{
+  "dashboardMetadata": {
+    "name": "Dynatrace S3 Log Forwarder Monitoring",
+    "shared": true,
+    "owner": "REPLACE_ME_OWNER"
+  },
+  "tiles": [
+    {
+      "name": "Log file processing",
+      "tileType": "TIMESERIES",
+      "configured": true,
+      "bounds": { "top": 390, "left": 0, "width": 456, "height": 228 },
+      "queries": [
+        { "metric": "REPLACE_ME_LogProcessingFailures" },
+        { "metric": "REPLACE_ME_LogFilesProcessed" },
+        { "metric": "REPLACE_ME_DroppedObjectsDecodingErrors" },
+        { "metric": "REPLACE_ME_DroppedObjectsNotMatchingFwdRules" },
+        { "metric": "REPLACE_ME_LogMessagesTrimmed" }
+      ],
+      "visualConfig": {
+        "type": "LINE",
+        "series": [
+          { "metric": "REPLACE_ME_LogProcessingFailures", "aggregation": "sum", "axis": "left" },
+          { "metric": "REPLACE_ME_LogFilesProcessed", "aggregation": "sum", "axis": "left" },
+          { "metric": "REPLACE_ME_DroppedObjectsDecodingErrors", "aggregation": "sum", "axis": "right" },
+          { "metric": "REPLACE_ME_DroppedObjectsNotMatchingFwdRules", "aggregation": "sum", "axis": "right" },
+          { "metric": "REPLACE_ME_LogMessagesTrimmed", "aggregation": "sum", "axis": "right" }
+        ]
+      }
+    },
+    {
+      "name": "Dynatrace API Responses",
+      "tileType": "TIMESERIES",
+      "configured": true,
+      "bounds": { "top": 0, "left": 456, "width": 456, "height": 228 },
+      "queries": [
+        { "metric": "REPLACE_ME_DynatraceHTTPErrors" },
+        { "metric": "REPLACE_ME_DynatraceHTTP503SpaceLimitReached" },
+        { "metric": "REPLACE_ME_DynatraceHTTP429Throttled" },
+        { "metric": "REPLACE_ME_DynatraceHTTP400InvalidLogEntries" },
+        { "metric": "REPLACE_ME_DynatraceHTTP200PartialSuccess" },
+        { "metric": "REPLACE_ME_DynatraceHTTP204Success" }
+      ],
+      "visualConfig": {
+        "type": "LINE",
+        "series": [
+          { "metric": "REPLACE_ME_DynatraceHTTPErrors", "aggregation": "sum", "axis": "right" },
+          { "metric": "REPLACE_ME_DynatraceHTTP503SpaceLimitReached", "aggregation": "sum", "axis": "right" },
+          { "metric": "REPLACE_ME_DynatraceHTTP429Throttled", "aggregation": "sum", "axis": "right" },
+          { "metric": "REPLACE_ME_DynatraceHTTP400InvalidLogEntries", "aggregation": "sum", "axis": "right" },
+          { "metric": "REPLACE_ME_DynatraceHTTP200PartialSuccess", "aggregation": "sum", "axis": "right" },
+          { "metric": "REPLACE_ME_DynatraceHTTP204Success", "aggregation": "sum", "axis": "left" }
+        ]
+      }
+    },
+    {
+      "name": "Log processing & Ingestion times",
+      "tileType": "TIMESERIES",
+      "configured": true,
+      "bounds": { "top": 0, "left": 1368, "width": 456, "height": 228 },
+      "queries": [
+        { "metric": "REPLACE_ME_LogProcessingTime" },
+        { "metric": "REPLACE_ME_DTIngestionTime" }
+      ],
+      "visualConfig": {
+        "type": "LINE",
+        "series": [
+          { "metric": "REPLACE_ME_LogProcessingTime", "aggregation": "avg", "axis": "left" },
+          { "metric": "REPLACE_ME_LogProcessingTime", "aggregation": "max", "axis": "left" },
+          { "metric": "REPLACE_ME_LogProcessingTime", "aggregation": "p90", "axis": "left" },
+          { "metric": "REPLACE_ME_DTIngestionTime", "aggregation": "min", "axis": "right" },
+          { "metric": "REPLACE_ME_DTIngestionTime", "aggregation": "avg", "axis": "right" },
+          { "metric": "REPLACE_ME_DTIngestionTime", "aggregation": "max", "axis": "right" },
+          { "metric": "REPLACE_ME_DTIngestionTime", "aggregation": "p90", "axis": "right" }
+        ]
+      }
+    },
+    {
+      "name": "Log Data throughput",
+      "tileType": "TIMESERIES",
+      "configured": true,
+      "bounds": { "top": 780, "left": 0, "width": 456, "height": 228 },
+      "queries": [
+        { "metric": "REPLACE_ME_UncompressedLogDTPayloadSize" },
+        { "metric": "REPLACE_ME_ReceivedUncompressedLogFileSize" }
+      ],
+      "visualConfig": {
+        "type": "LINE",
+        "series": [
+          { "metric": "REPLACE_ME_UncompressedLogDTPayloadSize", "aggregation": "sum", "axis": "left" },
+          { "metric": "REPLACE_ME_ReceivedUncompressedLogFileSize", "aggregation": "sum", "axis": "left" }
+        ]
+      }
+    },
+    {
+      "name": "QueueProcessingFunction Executions",
+      "tileType": "TIMESERIES",
+      "configured": true,
+      "bounds": { "top": 390, "left": 456, "width": 456, "height": 228 },
+      "queries": [
+        { "metric": "REPLACE_ME_LambdaInvocations" },
+        { "metric": "REPLACE_ME_LambdaConcurrentExecutions" },
+        { "metric": "REPLACE_ME_LambdaThrottles" },
+        { "metric": "REPLACE_ME_LambdaErrors" },
+        { "metric": "REPLACE_ME_NotEnoughExecutionTimeRemainingErrors" }
+      ],
+      "visualConfig": {
+        "type": "LINE",
+        "series": [
+          { "metric": "REPLACE_ME_LambdaInvocations", "aggregation": "sum", "axis": "left" },
+          { "metric": "REPLACE_ME_LambdaConcurrentExecutions", "aggregation": "max", "axis": "left" },
+          { "metric": "REPLACE_ME_LambdaThrottles", "aggregation": "sum", "axis": "left" },
+          { "metric": "REPLACE_ME_LambdaErrors", "aggregation": "sum", "axis": "left" },
+          { "metric": "REPLACE_ME_NotEnoughExecutionTimeRemainingErrors", "aggregation": "sum", "axis": "left" }
+        ]
+      }
+    },
+    {
+      "name": "Processing SQS Queue Messages",
+      "tileType": "TIMESERIES",
+      "configured": true,
+      "bounds": { "top": 390, "left": 912, "width": 456, "height": 228 },
+      "queries": [
+        { "metric": "REPLACE_ME_SQSApproximateNumberOfMessagesVisible" },
+        { "metric": "REPLACE_ME_SQSApproximateNumberOfMessagesNotVisible" },
+        { "metric": "REPLACE_ME_SQSApproximateAgeOfOldestMessage" },
+        { "metric": "REPLACE_ME_SQSNumberOfMessagesSent" },
+        { "metric": "REPLACE_ME_SQSNumberOfMessagesDeleted" }
+      ],
+      "visualConfig": {
+        "type": "LINE",
+        "series": [
+          { "metric": "REPLACE_ME_SQSApproximateNumberOfMessagesVisible", "aggregation": "avg", "axis": "left" },
+          { "metric": "REPLACE_ME_SQSApproximateNumberOfMessagesNotVisible", "aggregation": "sum", "axis": "left" },
+          { "metric": "REPLACE_ME_SQSApproximateAgeOfOldestMessage", "aggregation": "avg", "axis": "right" },
+          { "metric": "REPLACE_ME_SQSNumberOfMessagesSent", "aggregation": "sum", "axis": "left" },
+          { "metric": "REPLACE_ME_SQSNumberOfMessagesDeleted", "aggregation": "sum", "axis": "left" }
+        ]
+      }
+    },
+    {
+      "name": "DLQ Metrics",
+      "tileType": "TIMESERIES",
+      "configured": true,
+      "bounds": { "top": 390, "left": 1368, "width": 456, "height": 228 },
+      "queries": [
+        { "metric": "REPLACE_ME_DLQApproximateAgeOfOldestMessage" },
+        { "metric": "REPLACE_ME_DLQApproximateNumberOfMessagesVisible" }
+      ],
+      "visualConfig": {
+        "type": "LINE",
+        "series": [
+          { "metric": "REPLACE_ME_DLQApproximateAgeOfOldestMessage", "aggregation": "avg", "axis": "left" },
+          { "metric": "REPLACE_ME_DLQApproximateNumberOfMessagesVisible", "aggregation": "avg", "axis": "right" }
+        ]
+      }
+    },
+    {
+      "name": "Lambda queue processing function logs",
+      "tileType": "TABLE",
+      "configured": true,
+      "bounds": { "top": 780, "left": 456, "width": 1368, "height": 266 },
+      "queries": [
+        { "query": "fetch logs from:REPLACE_ME_LambdaFunctionLogSource limit:500 sort:@timestamp desc" }
+      ]
+    },
+    {
+      "name": "QueueProcessing Lambda Function Execution time",
+      "tileType": "TIMESERIES",
+      "configured": true,
+      "bounds": { "top": 0, "left": 912, "width": 456, "height": 228 },
+      "queries": [
+        { "metric": "REPLACE_ME_LambdaDuration" }
+      ],
+      "visualConfig": {
+        "type": "LINE",
+        "series": [
+          { "metric": "REPLACE_ME_LambdaDuration", "aggregation": "min", "axis": "left" },
+          { "metric": "REPLACE_ME_LambdaDuration", "aggregation": "avg", "axis": "left" },
+          { "metric": "REPLACE_ME_LambdaDuration", "aggregation": "max", "axis": "left" },
+          { "metric": "REPLACE_ME_LambdaDuration", "aggregation": "p90", "axis": "left" }
+        ]
+      }
+    },
+    {
+      "name": "Total log data processed over timeframe",
+      "tileType": "SINGLE_VALUE",
+      "configured": true,
+      "bounds": { "top": 0, "left": 0, "width": 456, "height": 228 },
+      "queries": [
+        { "metric": "REPLACE_ME_ReceivedUncompressedLogFileSize" },
+        { "metric": "REPLACE_ME_UncompressedLogDTPayloadSize" }
+      ],
+      "visualConfig": {
+        "type": "SINGLE_VALUE",
+        "series": [
+          { "metric": "REPLACE_ME_ReceivedUncompressedLogFileSize", "aggregation": "sum" },
+          { "metric": "REPLACE_ME_UncompressedLogDTPayloadSize", "aggregation": "sum" }
+        ]
+      }
+    }
+  ]
+}

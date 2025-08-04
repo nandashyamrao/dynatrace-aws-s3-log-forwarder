@@ -1,0 +1,32 @@
+direction: right
+enterprise_prod_test_accts [label: "ENTERPRISE PROD AND TEST ACCT", color: green, icon: aws-enterprise] {
+    cloudfront_prod [label: "CloudFront Prod", icon: aws-cloudfront]
+    
+    s3_cloudfront_logs [label: "BP AWS S3 Cloudfront-logs", icon: aws-s3]
+}
+
+account_prod_mgmt [label: "ACCOUNT PROD MGMT", color: brown, icon: aws-account] {
+    lambda_prod_mgmt [label: "Lambda", icon: aws-lambda]
+    sns_topic [label: "SNS Topic", icon: aws-sns]
+    central_cloudfront_logs [label: "Central Cloudfront-logs", icon: aws-s3]
+}
+
+account_ems [label: "ACCOUNT EMS", color: purple, icon: aws-account] {
+    dt_s3_lambda [icon: Lambda, label: "DT S3 Lambda\n(Docker image with rules)"]
+        parameter_store [label: "Parameter Store", icon: aws-ssm-parameter-store]
+    sqs [label: "SQS", icon: aws-sqs]
+}
+
+dynatrace_api [label: "Dynatrace API", icon: monitor]
+
+// connections. all node names are unique.
+cloudfront_prod > s3_cloudfront_logs: BP CF Distribution sends events to S3 bucket
+
+s3_cloudfront_logs > central_cloudfront_logs: S3 Rule copies logs to Infosec central S3 bucket
+lambda_prod_mgmt > sns_topic: publishes notification
+central_cloudfront_logs --> dt_s3_lambda  : DT S3 Lambda reads S3 object
+sqs > dt_s3_lambda: triggers and sends messages
+dt_s3_lambda > parameter_store
+sns_topic > sqs: sends messages
+
+dt_s3_lambda > dynatrace_api: sends enriched CloudFront logs

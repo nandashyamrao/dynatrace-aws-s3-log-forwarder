@@ -1,0 +1,204 @@
+{
+  "metadata": {
+    "configurationVersions": [
+      3
+    ]
+  },
+  "id": "bfbff14a-d412-4de6-8eca-21d69326196c",
+  "dashboardMetadata": {
+    "name": "EMS Splunk Ingest \u2014 Outline (Markdown fixed)",
+    "shared": false,
+    "owner": "ems-observability",
+    "preset": false,
+    "tilesNameSize": "medium",
+    "tags": [
+      "ems",
+      "splunk",
+      "kinesis",
+      "firehose",
+      "lambda"
+    ]
+  },
+  "tiles": [
+    {
+      "name": "EMS Splunk Ingest \u2014 Overview",
+      "type": "markdown",
+      "configured": true,
+      "bounds": {
+        "top": 0,
+        "left": 0,
+        "width": 912,
+        "height": 228
+      },
+      "tileFilter": {},
+      "markdown": {
+        "content": "# EMS Splunk Ingest (EMS-only)\nCloudWatch Logs (300+ accts) \u2192 **Kinesis** \u2192 **Lambda (enrichment)** \u2192 **NLB/ALB \u2192 Splunk HF/Indexers (HEC)**\n\n_No AWS/Logs metrics from producers. Dashboard uses EMS metrics and derived signals._"
+      }
+    },
+    {
+      "name": "Runbook & Thresholds",
+      "type": "markdown",
+      "configured": true,
+      "bounds": {
+        "top": 0,
+        "left": 912,
+        "width": 912,
+        "height": 228
+      },
+      "tileFilter": {},
+      "markdown": {
+        "content": "### Thresholds\n- IteratorAge warn **> 60,000 ms**, crit **> 300,000 ms**\n- Firehose Success% warn **< 99%**, crit **< 95%**\n- Silent account: **no ingress 30m** (active in last 7d)\n\n### Links\nKinesis \u2022 Lambda \u2022 Firehose \u2022 Splunk HF"
+      }
+    },
+    {
+      "name": "Kinesis \u2014 Incoming Bytes / Records",
+      "type": "markdown",
+      "configured": true,
+      "bounds": {
+        "top": 228,
+        "left": 0,
+        "width": 912,
+        "height": 228
+      },
+      "tileFilter": {},
+      "markdown": {
+        "content": "**IncomingBytes / IncomingRecords (line)**\nNamespace: `AWS/Kinesis`."
+      }
+    },
+    {
+      "name": "Kinesis \u2014 Write Throttles",
+      "type": "markdown",
+      "configured": true,
+      "bounds": {
+        "top": 228,
+        "left": 912,
+        "width": 456,
+        "height": 228
+      },
+      "tileFilter": {},
+      "markdown": {
+        "content": "**WriteProvisionedThroughputExceeded (sum)**\nNamespace: `AWS/Kinesis`."
+      }
+    },
+    {
+      "name": "Kinesis \u2014 Iterator Age (ms)",
+      "type": "markdown",
+      "configured": true,
+      "bounds": {
+        "top": 228,
+        "left": 1368,
+        "width": 456,
+        "height": 228
+      },
+      "tileFilter": {},
+      "markdown": {
+        "content": "**GetRecords.IteratorAgeMilliseconds (max)**\nNamespace: `AWS/Kinesis`."
+      }
+    },
+    {
+      "name": "Lambda \u2014 Errors & Throttles (5m)",
+      "type": "markdown",
+      "configured": true,
+      "bounds": {
+        "top": 456,
+        "left": 0,
+        "width": 912,
+        "height": 228
+      },
+      "tileFilter": {},
+      "markdown": {
+        "content": "**Errors / Throttles (single)**\nNamespace: `AWS/Lambda`."
+      }
+    },
+    {
+      "name": "Lambda \u2014 Duration p95/p99 & Concurrency",
+      "type": "markdown",
+      "configured": true,
+      "bounds": {
+        "top": 456,
+        "left": 912,
+        "width": 912,
+        "height": 228
+      },
+      "tileFilter": {},
+      "markdown": {
+        "content": "**Duration (p95/p99) / ConcurrentExecutions (line)**\nNamespace: `AWS/Lambda`."
+      }
+    },
+    {
+      "name": "Firehose \u2192 Splunk \u2014 Success % & Failures",
+      "type": "markdown",
+      "configured": true,
+      "bounds": {
+        "top": 684,
+        "left": 0,
+        "width": 912,
+        "height": 228
+      },
+      "tileFilter": {},
+      "markdown": {
+        "content": "**Success%** from `DeliveryToSplunk.Success/Failure` \u2022 **Failures (5m)`**\nNamespace: `AWS/Firehose`."
+      }
+    },
+    {
+      "name": "Firehose \u2014 Data Freshness & S3 Backup",
+      "type": "markdown",
+      "configured": true,
+      "bounds": {
+        "top": 684,
+        "left": 912,
+        "width": 912,
+        "height": 228
+      },
+      "tileFilter": {},
+      "markdown": {
+        "content": "**DeliveryToSplunk.DataFreshness (ms)** \u2022 **BackupToS3.Records`**\nNamespace: `AWS/Firehose`."
+      }
+    },
+    {
+      "name": "Firehose \u2014 Throttled & Volume",
+      "type": "markdown",
+      "configured": true,
+      "bounds": {
+        "top": 912,
+        "left": 0,
+        "width": 1824,
+        "height": 228
+      },
+      "tileFilter": {},
+      "markdown": {
+        "content": "**ThrottledRecords** \u2022 **IncomingRecords/IncomingBytes** (line)\nNamespace: `AWS/Firehose`."
+      }
+    },
+    {
+      "name": "Splunk HEC \u2014 HTTP Error Rate",
+      "type": "markdown",
+      "configured": true,
+      "bounds": {
+        "top": 1140,
+        "left": 0,
+        "width": 912,
+        "height": 228
+      },
+      "tileFilter": {},
+      "markdown": {
+        "content": "**HEC HTTP Error Rate (line)** \u2014 from Splunk `_internal` logs (`sourcetype=splunkd`, components `HttpInput*`)."
+      }
+    },
+    {
+      "name": "Splunk \u2014 Lag vs Event Time (p95)",
+      "type": "markdown",
+      "configured": true,
+      "bounds": {
+        "top": 1140,
+        "left": 912,
+        "width": 912,
+        "height": 228
+      },
+      "tileFilter": {},
+      "markdown": {
+        "content": "**Lag p95** via SPL: `eval lag_sec=_indextime - _time | timechart perc95(lag_sec)` (optional export as metric)."
+      }
+    }
+  ]
+}

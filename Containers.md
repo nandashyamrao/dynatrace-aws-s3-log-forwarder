@@ -1,5 +1,24 @@
+# 📘 Container Log Flows — Standalone vs Kubernetes vs Enterprise Dynatrace
+
+This document explains how **one log line** moves from a container to **Dynatrace SaaS** in three contexts:
+1. Standalone VM (Docker/Podman)
+2. Kubernetes / OpenShift (containerd / CRI-O)
+3. Enterprise with Dynatrace (OneAgent + ActiveGate)
+
 ---
 
-✅ This gives you a **one-page Markdown reference** you can drop straight into your team’s GitLab/MkDocs docs or internal Confluence.  
+## 🗂️ Quick Comparison Table
 
-👉 Do you want me to also include a **cheat-sheet section of DQL queries** (like top errors by pod, logs missing enrichment, etc.) at the bottom of the markdown? That way your team can test right away.
+| Context | Runtime | Log Storage Location | OneAgent Role | Enrichment | SaaS Result |
+|---------|---------|----------------------|---------------|------------|-------------|
+| **Standalone VM** | Docker/Podman | `/var/lib/docker/containers/<id>/<id>-json.log` | Host OneAgent tails JSON logs | `dt.host.*`, `dt.container.*` | Logs linked to host + container |
+| **Kubernetes** | containerd / CRI-O | `/var/log/pods/<namespace>/<pod>/<id>/0.log` | OneAgent DaemonSet tails pod logs | `dt.host.*`, `dt.container.*`, `kubernetes.*` | Logs linked to host + pod/namespace |
+| **Enterprise Dynatrace** | Same (Docker/K8s) | Same as above | OneAgent (host/DaemonSet) + ActiveGate | Adds Dynatrace IDs (`HOST-*`, `PROC-*`) | Logs fully correlated with metrics & traces |
+
+---
+
+## 1️⃣ Standalone VM / Bare-Metal (Docker)
+
+**Raw Log (inside container stdout/stderr):**
+```text
+2025-08-29 14:15:10 ERROR Database connection timeout after 30s

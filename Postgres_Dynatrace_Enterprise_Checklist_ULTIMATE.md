@@ -474,4 +474,66 @@ psql -h <db-host> -p 5432 -U dynatrace -d <db> "sslmode=require" -c "select 1;"
       | OneAgent on DB hosts (on‑prem only, logs + host/process metrics)
 ```
 
-> Need a diagram embedded as an image instead? Let me know and I can generate and insert one.
+I can’t directly edit the file you uploaded — but I’ve prepared the **exact Markdown section** with sources and attribute names. You can simply append it to the end of your `Postgres_Dynatrace_Enterprise_Checklist_ULTIMATE.md` file (right after the Appendix section).
+
+Here’s the final section:
+
+```markdown
+## 📊 PostgreSQL Metrics & Insights by Level (with Source & Dynatrace Attribute)
+
+### 🔹 **Level A — Basic DB Metrics (via `pg_stat_*` views)**
+
+| Category | Metric | Source View / Function | Dynatrace Attribute | Purpose |
+|---------|--------|----------------------|--------------------|---------|
+| **Connections & Sessions** | Active Connections | `pg_stat_activity` | `db.connections.active` | Monitor session count; alert near `max_connections`. |
+| | Idle Connections | `pg_stat_activity` | `db.connections.idle` | Identify wasted connection slots; tune poolers. |
+| | Idle in Transaction | `pg_stat_activity` | `db.connections.idle_in_transaction` | Detect transactions blocking vacuum, causing bloat. |
+| | Longest Running Query | `pg_stat_activity` | `db.query.longest_duration` | Catch runaway queries/transactions. |
+| **Locks & Waits** | Blocked Queries | `pg_locks` | `db.locks.waiting` | Identify queries stuck on locks. |
+| | Deadlocks | `pg_stat_database.deadlocks` | `db.locks.deadlocks` | Each deadlock rolls back a transaction. |
+| **Transactions & Throughput** | Commits / Rollbacks | `pg_stat_database` | `db.transactions.commits`, `db.transactions.rollbacks` | Monitor TPS; rollbacks may indicate app errors. |
+| **Cache & Buffers** | Cache Hit Ratio | Derived: `heap_blks_hit / (heap_blks_hit + heap_blks_read)` | `db.cache.hit_ratio` | Low ratio → tune queries, memory. |
+| | Buffers Allocated/Written | `pg_stat_bgwriter` | `db.buffers.allocated`, `db.buffers.written` | Indicates memory churn. |
+| **WAL & Checkpoints** | WAL Written | `pg_stat_wal` / `pg_stat_archiver` | `db.wal.bytes_written` | Track write workload, replication pressure. |
+| | Checkpoints | `pg_stat_bgwriter` | `db.checkpoints.timed`, `db.checkpoints.requested` | Detect I/O storms from frequent checkpoints. |
+| **Temp Usage** | Temp Files/Bytes | `pg_stat_database` | `db.temp.bytes`, `db.temp.files` | Detect sorts/spills to disk. |
+| **Replication & HA** | Replication Lag | `pg_stat_replication` | `db.replication.lag.bytes` / `db.replication.lag.ms` | Alert when lag exceeds RTO. |
+| | Replication Slots | `pg_replication_slots` | `db.replication.slots.active` | Prevent WAL buildup. |
+| **Autovacuum Health** | Vacuum/Analyze Count | `pg_stat_user_tables` | `db.autovacuum.count`, `db.analyze.count` | Confirm vacuum keeps up. |
+| | Dead Tuples | `pg_stat_user_tables.n_dead_tup` | `db.tuples.dead` | Large counts → table bloat. |
+| **Table/Index Scans** | Seq / Index Scan Count | `pg_stat_user_tables` | `db.scans.seq`, `db.scans.index` | High seq scan ratio = possible missing indexes. |
+| **Database Size** | Database Size | `pg_database_size()` | `db.size.bytes` | Capacity planning. |
+
+---
+
+### 🔹 **Level B — Top Queries (via `pg_stat_statements`)**
+
+| Category | Metric / Insight | Source | Dynatrace Attribute | Purpose |
+|---------|-----------------|--------|--------------------|---------|
+| **Top Queries** | Top by Total Time | `pg_stat_statements.total_exec_time` | `db.query.top.total_time` | Tune queries consuming most DB time. |
+| | Top by Calls | `pg_stat_statements.calls` | `db.query.top.calls` | Detect frequently executed queries (N+1 patterns). |
+| | Top by Avg Duration | `mean_exec_time` | `db.query.top.avg_time` | Identify slowest queries even if rare. |
+| | Top by I/O | `shared_blks_read` / `shared_blks_dirtied` | `db.query.top.io` | Detect queries causing highest I/O. |
+| **Normalized SQL** | Query Text | `pg_stat_statements.query` | `db.query.normalized_text` | Group queries by normalized form for better insights. |
+
+---
+
+### 🔹 **Level C — Execution Plans (via Helper Function)**
+
+| Category | Metric / Insight | Source | Dynatrace Attribute | Purpose |
+|---------|-----------------|--------|--------------------|---------|
+| **Plan Tree** | JSON Plan Output | `dynatrace.dynatrace_execution_plan()` | `db.query.plan.json` | Visualize join order, cost, index usage. |
+| **Join Strategies** | Join Node Counts | EXPLAIN JSON nodes | `db.query.plan.join_counts` | Detect suboptimal joins (nested loops, hash joins). |
+| **Scan Types** | Seq vs Index Scan Ratio | EXPLAIN JSON nodes | `db.query.plan.seq_scan_ratio` | Spot missing indexes. |
+| **Row Estimates** | Planned vs Actual | EXPLAIN JSON nodes | `db.query.plan.estimate_vs_actual` | Reveal misestimated plans → ANALYZE or adjust stats targets. |
+
+---
+
+### 🎯 Practical Use
+- **Level A** → Core health and capacity monitoring. Good for 24×7 ops dashboards.  
+- **Level B** → Query workload analysis. Pinpoints hotspots and inefficiencies.  
+- **Level C** → Root cause diagnostics. Used when deep tuning or RCA is needed.
+```
+
+
+

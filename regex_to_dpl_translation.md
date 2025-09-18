@@ -159,3 +159,84 @@ Card=1234-5678-9999-0000 User=alice
 - Use `TEXT:*` to discard rest of the line.  
 - Use **regex (`matches(field, /.../)`)** only when you need advanced features (lookarounds, alternation inside token, boundary checks).  
 - **Always filter early** (`from:` and `filter`) before parsing.  
+
+
+---
+
+# ✅ Extended Summary Rules for Regex & DPL in Dynatrace DQL  
+
+## 🔹 General Parsing Strategy
+- **Prefer DPL tokens (`WORD`, `INT`, `TEXT`, `FLOAT`, `JSON`) over regex.**  
+  → They’re faster, easier to read, and more robust.  
+- **Regex (`matches`) is still PCRE.** Use it only when DPL cannot express the pattern (lookahead, boundaries, complex alternation).  
+- **Filter before parsing.** Always use `from:` and `filter` first to cut data volume.  
+
+## 🔹 Token Usage
+- Use **`WORD`** for single tokens without spaces (e.g., usernames, codes).  
+- Use **`TEXT`** for free text that may contain spaces (e.g., messages, error descriptions).  
+- Use **`INT`** and **`FLOAT`** for numeric fields.  
+- Use **`?`** to make fields optional → avoids dropped lines when data is missing.  
+- Use **`*`** or `TEXT:*` to skip irrelevant portions of a log line.  
+
+## 🔹 JSON Logs
+- If logs are JSON → **always use `JSON:j`**, never regex.  
+- Drill into fields with `j.fieldname`.  
+- Example:  
+  ```dql
+  | parse content, "JSON:j"
+  | fields j.user, j.action
+  ```
+
+## 🔹 Multi-value Data
+- Use `parseAll` when a pattern repeats (`Item=WORD:item`).  
+- Always follow with `expand` to flatten lists.  
+- Example:  
+  ```dql
+  | parseAll content, "Item=WORD:item"
+  | expand item
+  ```
+
+## 🔹 String & Phrase Matching
+- For **simple wildcards** → use `like` (`content like "ERROR*"`).  
+- For **phrase search** → use `matchesPhrase` (`"User login failed"`).  
+- For **pattern-based matching** → use `matchesPattern`.  
+- For **complex regex** → use `matches(field, /regex/)`.  
+
+## 🔹 Robustness & Reliability
+- If you’re not sure a field always exists → make it **optional** (`INT:code?`).  
+- If the log format is mixed, **parse only what you need** (skip the rest).  
+- For CSV or delimited logs → use `split` or `parse` with `TEXT` for the last column.  
+
+## 🔹 Joins & Enrichment
+- Logs often have `dt.entity.host` or `dt.entity.service` → join with entity metadata.  
+- Use `entityName()` for human-readable names instead of IDs.  
+- Example:  
+  ```dql
+  | lookup [ fetch entities | fields host=entityId, os=entityAttr("osType") ] on dt.entity.host
+  ```
+
+## 🔹 Performance Considerations
+- `matchesPhrase` and `like` are cheaper than regex.  
+- `matchesPattern` (with tokens) is faster than raw regex.  
+- Avoid `parseAll` unless you really need multiple matches—it expands results.  
+- Narrow with `from:` (time window) first.  
+
+## 🔹 Migration Mindset
+- Splunk regex groups → map to DPL tokens (`(?<user>\w+)` → `WORD:user`).  
+- Splunk wildcards (`.*error.*`) → map to `matchesPhrase(content, "error")`.  
+- Splunk optional groups (`(foo)?`) → map to `WORD:foo?`.  
+- Splunk key-value parsing → map to `parse "Key=WORD:field"`.  
+
+---
+
+# 🚀 Quick Migration Checklist
+
+✅ Start every query with **`fetch logs, from:`** and a **filter**.  
+✅ Use **tokens (`WORD`, `TEXT`, `INT`)** for parsing, not regex, unless unavoidable.  
+✅ Add `?` to make parsing **fault-tolerant**.  
+✅ Use **`parseAll` + `expand`** for repeating keys.  
+✅ Prefer **`matchesPhrase`** or **`like`** for searches instead of regex.  
+✅ **Enrich logs with entities** (`entityName()`, `entityAttr`) for better dashboards.  
+✅ Use regex (`matches(field, /regex/)`) only for advanced cases (lookbehind, lookahead, word boundaries).  
+
+---

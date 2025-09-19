@@ -1,0 +1,74 @@
+title AWS WAF Protection & Logging Flow to Dynatrace
+
+// 1. Users / Internet
+Users [icon: globe, label: "Users / Internet"]
+
+// 2. AWS Entry Points Protected by WAF
+AWS Entry Points [icon: shield, color: blue, label: "AWS Entry Points (WAF Protected)"] {
+  CloudFront [icon: aws-cloudfront] {
+    CloudFront Web ACL [icon: aws-waf, label: "Web ACL"]
+  }
+  ALB [icon: aws-alb] {
+    ALB Web ACL [icon: aws-waf, label: "Web ACL"]
+  }
+  API Gateway [icon: aws-api-gateway, label: "API Gateway / AppSync"] {
+    API Gateway Web ACL [icon: aws-waf, label: "Web ACL"]
+  }
+}
+
+// 3. WAF Evaluation Logic
+WAF Evaluation [icon: aws-waf, label: "WAF Evaluation (Managed + Custom + Rate-based)"]
+
+// 4. Application / API
+Application API [icon: server, label: "Application / API"]
+
+// 5. Logging Pipeline
+Logging Pipeline [icon: file-text, color: orange, label: "WAF Logging Pipeline"] {
+  WAF Logging [icon: aws-waf, label: "AWS WAF Logging"]
+  Kinesis Firehose [icon: aws-kinesis-data-firehose, label: "Kinesis Data Firehose"]
+
+  // Destinations from Firehose
+  Firehose Destinations [icon: layers] {
+    S3 [icon: aws-s3, label: "Amazon S3 "] {
+      S3 SNS Topic [icon: aws-sns, label: "SNS Topic"] {
+        S3 SQS [icon: aws-sqs, label: "Amazon SQS"] {
+          SQS Lambda Forwarder [icon: lambda, label: "Lambda: Dynatrace WAF Log Forwarder"]
+          SQS DLQ [icon: aws-sqs, label: "Dead-Letter Queue (DLQ)"]
+        }
+      }
+    }
+    
+  }
+}
+
+// 6. Dynatrace (Grail) Log Ingest API
+Dynatrace Grail [icon: dynatrace, label: "Dynatrace (Grail) Log Ingest API"]
+
+// Connections
+
+// Users to AWS Entry Points
+Users > CloudFront
+Users > ALB
+Users > API Gateway
+
+// Entry Points to WAF Evaluation
+CloudFront Web ACL > WAF Evaluation
+ALB Web ACL > WAF Evaluation
+API Gateway Web ACL > WAF Evaluation
+
+// WAF Evaluation to Application/API
+WAF Evaluation > Application API
+
+// Application/API to Logging (parallel trigger)
+Application API --> WAF Logging: enable logging
+
+// Logging pipeline
+WAF Logging > Kinesis Firehose
+Kinesis Firehose > S3
+
+
+// S3 event to EventBridge to Lambda
+
+// S3 to SNS to SQS to Lambda/DLQ
+SQS Lambda Forwarder > Dynatrace Grail
+S3 --> S3 SNS Topic: Put Log event

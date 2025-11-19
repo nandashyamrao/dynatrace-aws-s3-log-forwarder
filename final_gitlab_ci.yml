@@ -1,0 +1,128 @@
+# .gitlab-ci.yml (reconstructed from your screenshots + fixed preview site)
+
+default:
+  image: registry.sfgitlab.opr.statefarm.org/registry/sfcommunity/mkdocs-material:9.5.33
+  tags:
+    - shared-aws-small
+variables:
+  GIT_DEPTH: 0
+
+stages:
+  - build
+  - deploy
+
+# --------------------------------------------
+# PREVIEW SITE FOR EVERY BRANCH (SAFE)
+# --------------------------------------------
+test:
+  stage: build
+  script:
+    - rm -rf public
+    - mkdocs build --strict --site-dir public
+  artifacts:
+    expose_as: "Book Draft"
+    paths:
+      - public/
+    expire_in: 3 days
+  rules:
+    - when: always
+  environment:
+    name: "preview-$CI_COMMIT_REF_NAME"
+    url: "$CI_PROJECT_URL/-/jobs/$CI_JOB_ID/artifacts/public/index.html"
+    auto_stop_in: 3 days
+
+# --------------------------------------------
+# PRODUCTION GITLAB PAGES (ONLY DEFAULT BRANCH)
+# --------------------------------------------
+pages:
+  stage: deploy
+  script:
+    # Full MkDocs rebuild
+    - rm -rf public
+    - mkdocs build --strict --site-dir public
+
+    # Generate assets_index.json
+    - |
+      python3 - <<'PY'
+      import json, os
+      root = "public"
+      exts = {".png",".jpg",".jpeg",".gif",".svg",".webp",".bmp",".tif",".tiff",".ico"}
+      out = []
+      for r, _, files in os.walk(root):
+        for f in files:
+          if os.path.splitext(f.lower())[1] in exts:
+            p = os.path.join(r, f).replace("\\","/")
+            out.append(p[len(root)+1:])
+      out.sort()
+      with open(os.path.join(root,"assets_index.json"), "w", encoding="utf-8") as fp:
+        json.dump(out, fp, ensure_ascii=False, indent=2)
+      PY
+
+    # Generate image_refs.json
+    - |
+      python3 - <<'PY'
+      import os, re, json
+
+      root = "public"
+      exts = {".png",".jpg",".jpeg",".gif",".svg",".webp",".bmp",".tif",".tiff",".ico"}
+      img_re = re.compile(r'<img\\s+[^>]*src=["\\']([^"\\']+)["\\']', re.I)
+
+      def norm(p): 
+          return p.replace("\\","/").lstrip("/")
+
+      by_image, by_page = {}, {}
+
+      for r, _, files in os.walk(root):
+        for f in files:
+          if not f.lower().endswith(".html"):
+            continue
+
+          page_abs = os.path.join(r, f)
+          page_rel = norm(page_abs[len(root)+1:])
+
+          with open(page_abs, "r", encoding="utf-8", errors="ignore") as fp:
+            html = fp.read()
+
+          basedir = os.path.dirname(page_rel)
+
+          for src in img_re.findall(html):
+            if src.startswith("data:") or src.lower().startswith("http"):
+              continue
+
+            src = src.split("?")[0].split("#")[0]
+            cand = norm(os.path.normpath(os.path.join(basedir, src)))
+
+            if os.path.splitext(cand.lower())[1] not in exts:
+              continue
+
+            by_image.setdefault(cand, set()).add(page_rel)
+            by_page.setdefault(page_rel, set()).add(cand)
+
+      by_image = {k: sorted(v) for k, v in by_image.items()}
+      by_page = {k: sorted(v) for k, v in by_page.items()}
+
+      with open(os.path.join(root,"image_refs.json"), "w", encoding="utf-8") as fp:
+        json.dump({"by_image": by_image, "by_page": by_page},
+                  fp, ensure_ascii=False, indent=2)
+      PY
+
+    # Sanity checks
+    - test -f public/search/search_index.json
+    - test -f public/assets_index.json
+    - test -f public/image_refs.json
+    - test -f public/tree.html
+    - grep -q 'search/search_index.json' public/tree.html || (echo "tree.html missing search_index.json"; exit 1)
+
+  artifacts:
+    paths:
+      - public
+    expire_in: 3 days
+
+  rules:
+    - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH"
+      when: on_success
+    - when: never
+
+  needs:
+    - job: test
+      artifacts: false

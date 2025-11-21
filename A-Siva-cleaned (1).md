@@ -108,24 +108,10 @@ melting ignorance and awakening devotion.
 
 The saint implies:  
 _Just by hearing or reciting Thiruvasagam,  
-one’s karmic knots begin to melt._
+one’s karmic knots begin to melt. 
 
 
-✔ Tamil  
-✔ Transliteration  
-✔ Compound breakdown  
-✔ Word-by-word meanings  
-✔ Simple translation  
-✔ Deep spiritual commentary
 
-Just say: **“Continue with Verse 2.”**
-
-## Prompt:
-excellent .. continue
-
-## Response:
-Wonderful — we continue with **VERSE 2** in the same rich, detailed format.  
-This verse corresponds to **00:01:03 – 00:02:05** from your transcript.
 
 
 **Tamil**

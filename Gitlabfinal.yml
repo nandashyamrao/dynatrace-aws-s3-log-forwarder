@@ -1,0 +1,203 @@
+# GitLab CI – ServiceNow CSV → Dynatrace + Splunk (Artifact-First Design)
+
+This document captures the **final agreed design** for the ServiceNow CSV pipeline, with
+rsync intentionally removed and all outputs preserved as GitLab artifacts.
+
+The design ensures:
+- Dynatrace and Splunk **both receive a file named `servicenow.csv`**
+- The **content differs by destination**, not the filename
+- No accidental overwrites
+- Future rsync enablement with **zero refactoring**
+
+---
+
+## 🎯 Final Rule (Critical Constraint)
+
+- **Both downstream systems expect the filename `servicenow.csv`**
+- Dynatrace and Splunk expect **different content**
+- A filesystem cannot hold two files with the same name simultaneously
+
+👉 Therefore, we use **internal working filenames**, and **publish intent-specific artifacts**.
+
+---
+
+## 🧠 Correct Mental Model
+
+### Inside the pipeline (working files)
+
+| Purpose | Internal Filename |
+|------|------------------|
+| Raw S3 download | `orgdata.csv` |
+| Canonical processed output (WITH header) | `servicenow_work.csv` |
+| Dynatrace-ready (NO header) | `servicenow_dt.csv` |
+| Splunk-ready (`z_` prefixed headers) | `servicenow_splunk.csv` |
+
+### Outside the pipeline (what consumers care about)
+
+| Consumer | Delivered filename | Content |
+|--------|-------------------|---------|
+| Dynatrace | `servicenow.csv` | Headerless CSV parsed via `parsePattern` |
+| Splunk | `servicenow.csv` | CSV with `z_`-prefixed headers |
+
+> Internally, files remain distinct.  
+> At delivery time, each is renamed to `servicenow.csv`.
+
+---
+
+## 🧾 `.gitlab-ci.yml`
+
+```yaml
+include:
+  - component: sfgitlab.opr.statefarm.org/sfcomponents/utilities/gitlab-oidc-aws-sts/template@1
+    inputs:
+      gitlab_oidc_role_arn: "arn:aws:iam::190731337505:role/gitlab-ci-s3-reader-role"
+      oidc_expires_in: "900"
+      aws_region: "us-east-1"
+
+stages:
+  - fetch
+
+fetch-and-process-csv:
+  stage: fetch
+  image: registry.sfgitlab.opr.statefarm.org/registry/sfcommon/aws-cli:v2
+  tags:
+    - shared-aws
+
+  variables:
+    PROJECT_BUCKET_NAME: "sf-logpoc-test-dtcsvlookupdata"
+    CSV_KEY: "orgdata.csv"
+    AWS_REGION: "us-east-1"
+    DT_SECRET_NAME: "dtcsvlookup"
+    PE_COMPONENT_EVENTING_SKIP_PRE_BUILD: "true"
+
+  script:
+    # -----------------------------------
+    # 0) Safety flags
+    # -----------------------------------
+    - set -euo pipefail
+
+    # -----------------------------------
+    # TEMP FIX for OIDC template
+    # -----------------------------------
+    - export PE_COMPONENT_EVENTING_COMPONENT_DATA=""
+    - export PE_COMPONENT_EVENTING_CA_CERT=""
+
+    # -----------------------------------
+    # 1) Assume AWS role via OIDC
+    # -----------------------------------
+    - !reference [.gitlab-oidc-aws-sts-credentials, script]
+
+    # -----------------------------------
+    # 2) Download source CSV
+    # -----------------------------------
+    - aws s3 cp "s3://${PROJECT_BUCKET_NAME}/${CSV_KEY}" "./orgdata.csv"
+    - head -n 5 orgdata.csv || true
+
+    # -----------------------------------
+    # 3) Process CSV → working file (WITH header)
+    # -----------------------------------
+    - bash process_csv.sh orgdata.csv servicenow_work.csv
+    - head -n 3 servicenow_work.csv || true
+
+    # -----------------------------------
+    # 4) Dynatrace version (NO header)
+    # -----------------------------------
+    - |
+      tail -n +2 servicenow_work.csv > servicenow_dt.csv
+      head -n 2 servicenow_dt.csv || true
+
+    # -----------------------------------
+    # 5) Splunk version (z_ prefixed header)
+    # -----------------------------------
+    - |
+      awk -F',' '
+        NR==1 {
+          for (i=1;i<=NF;i++) {
+            printf "z_%s", $i
+            if (i<NF) printf ","
+          }
+          printf "\n"
+          next
+        }
+        { print }
+      ' servicenow_work.csv > servicenow_splunk.csv
+      head -n 2 servicenow_splunk.csv || true
+
+    # -----------------------------------
+    # 6) Load Dynatrace secrets
+    # -----------------------------------
+    - |
+      SECRET_JSON=$(aws secretsmanager get-secret-value \
+        --region "$AWS_REGION" \
+        --secret-id "$DT_SECRET_NAME" \
+        --query 'SecretString' \
+        --output text)
+
+      export CLIENT_ID=$(echo "$SECRET_JSON" | jq -r '.client_id')
+      export CLIENT_SECRET=$(echo "$SECRET_JSON" | jq -r '.client_secret')
+      export GRANT_TYPE=$(echo "$SECRET_JSON" | jq -r '.grant_type')
+      export RESOURCE=$(echo "$SECRET_JSON" | jq -r '.resource')
+      export DT_TOKEN_URL=$(echo "$SECRET_JSON" | jq -r '.dt_token_url')
+      export DT_UPLOAD_URL_TEST=$(echo "$SECRET_JSON" | jq -r '.dt_upload_url_test')
+      export DT_UPLOAD_URL_PROD=$(echo "$SECRET_JSON" | jq -r '.dt_upload_url_prod')
+
+    # -----------------------------------
+    # 7) OAuth token
+    # -----------------------------------
+    - |
+      ACCESS_TOKEN=$(
+        curl -sS -X POST "$DT_TOKEN_URL" \
+          -d "client_id=${CLIENT_ID}" \
+          -d "client_secret=${CLIENT_SECRET}" \
+          -d "grant_type=${GRANT_TYPE}" \
+          -d "resource=${RESOURCE}" \
+        | jq -r '.access_token'
+      )
+      [ -n "$ACCESS_TOKEN" ] && [ "$ACCESS_TOKEN" != "null" ]
+
+    # -----------------------------------
+    # 8) Prepare lookup request
+    # -----------------------------------
+    - |
+      cat >/tmp/request.json <<'EOF'
+      {
+        "displayName": "SF ServiceNow Team Map",
+        "description": "ServiceNow team directory for enrichment",
+        "lookupField": "solma_id",
+        "filePath": "/lookups/sn/costcenter",
+        "parsePattern": "LD:solma_id ',' LD:ci_name ',' LD:area_name ',' LD:director_alias ',' LD:manager_alias ',' LD:product_name ',' LD:product_suite_name ',' LD:tier ',' LD:wg_name ',' LD:costing_id ',' LD:exec_alias ',' LD:manager_name ',' LD:director_name ',' LD:exec_name ',' LD:last_updated ',' LD:platforms ',' LD:tech_owner_alias ',' LD:tech_owner_name",
+        "overwrite": true
+      }
+      EOF
+
+    # -----------------------------------
+    # 9) Upload to Dynatrace (headerless CSV)
+    # -----------------------------------
+    - |
+      curl -sS -X POST "$DT_UPLOAD_URL_TEST" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -F "content=@servicenow_dt.csv" \
+        -F "request=@/tmp/request.json;type=application/json" || true
+
+      curl -sS -X POST "$DT_UPLOAD_URL_PROD" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -F "content=@servicenow_dt.csv" \
+        -F "request=@/tmp/request.json;type=application/json" || true
+
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      # Raw and working files
+      - orgdata.csv
+      - servicenow_work.csv
+
+      # Destination-specific outputs
+      - servicenow_dt.csv
+      - servicenow_splunk.csv
+
+      # Metadata
+      - /tmp/request.json
+
+  after_script:
+    - !reference [.gitlab-oidc-aws-sts-credentials, after_script]

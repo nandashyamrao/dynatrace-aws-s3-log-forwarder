@@ -320,3 +320,186 @@ Once all the above are done, your GitLab pipeline should be able to:
 - Assume the role via OIDC.
 - Read CSVs from `sf-ems-dynatrace-test-scripts/dtlookup/`.
 - Call Dynatrace APIs using the secret from Secrets Manager.
+Here’s a clear, concrete breakdown of how many AWS resources you are building with this Terraform setup, and why each exists.
+
+⸻
+
+✅ High-level answer
+
+👉 You are building 5 AWS resources in total
+(plus 1 logical attachment resource that Terraform tracks)
+
+⸻
+
+🧱 Resource-by-resource breakdown
+
+1️⃣ AWS Secrets Manager Secret
+
+Resource type
+
+aws_secretsmanager_secret
+
+Name
+
+dtcsvlookup
+
+Purpose
+	•	Stores Dynatrace OAuth credentials and endpoints:
+	•	client_id
+	•	client_secret
+	•	token URL
+	•	lookup upload URLs
+	•	Used by GitLab CI (via IAM role) to authenticate to Dynatrace
+
+Why this is needed
+	•	Secrets are not hardcoded in GitLab
+	•	Central, auditable secret storage
+	•	Rotation-ready
+
+✅ Counts as 1 AWS resource
+
+⸻
+
+2️⃣ Secrets Manager Secret Version
+
+Resource type
+
+aws_secretsmanager_secret_version
+
+Purpose
+	•	Stores the actual JSON payload (key/value pairs) inside the secret
+	•	Every update creates a new version
+
+Important clarification
+	•	AWS Console shows this as part of the same secret
+	•	Terraform treats it as a separate resource
+
+✅ Counts as 1 AWS resource
+
+⸻
+
+3️⃣ IAM Role
+
+Resource type
+
+aws_iam_role
+
+Name
+
+gitlab-ci-s3-reader-role
+
+Purpose
+	•	Assumed by GitLab CI via OIDC
+	•	Provides short-lived credentials (STS)
+	•	No static IAM users or access keys
+
+Trust relationship
+	•	Trusted identity:
+
+arn:aws:iam::351454108853:oidc-provider/sfgitlab.opr.statefarm.org
+
+
+	•	Restricted to:
+	•	One GitLab project
+	•	One branch (main)
+
+✅ Counts as 1 AWS resource
+
+⸻
+
+4️⃣ IAM Policy (Customer-managed)
+
+Resource type
+
+aws_iam_policy
+
+Name
+
+gitlab-ci-s3-readonly-dt-sf-ems-test
+
+What it allows
+	•	s3:ListBucket on:
+
+sf-ems-dynatrace-test-scripts
+
+
+	•	s3:GetObject* on:
+
+sf-ems-dynatrace-test-scripts/dtlookup/*
+
+
+	•	secretsmanager:GetSecretValue on:
+
+dtcsvlookup
+
+
+
+Why separate from role
+	•	Clean separation of:
+	•	Who can assume the role (trust)
+	•	What the role can do (policy)
+
+✅ Counts as 1 AWS resource
+
+⸻
+
+5️⃣ IAM Role Policy Attachment
+
+Resource type
+
+aws_iam_role_policy_attachment
+
+Purpose
+	•	Attaches the policy to the role
+	•	Terraform tracks this relationship explicitly
+
+Important note
+	•	AWS does not show this as a “resource”
+	•	Terraform must track it to manage lifecycle cleanly
+
+✅ Counts as 1 Terraform-managed resource
+
+⸻
+
+📊 Final Count Summary
+
+#	Resource	Type
+1	Secrets Manager Secret	aws_secretsmanager_secret
+2	Secret Version	aws_secretsmanager_secret_version
+3	IAM Role	aws_iam_role
+4	IAM Policy	aws_iam_policy
+5	Role ↔ Policy Attachment	aws_iam_role_policy_attachment
+
+
+⸻
+
+🎯 Total
+
+👉 5 AWS resources created
+
+👉 2 logical groupings
+	•	Secrets group (1 secret + versions)
+	•	IAM group (role + policy + attachment)
+
+⸻
+
+🧠 What you are not creating (important)
+
+You are NOT creating:
+	•	❌ IAM users
+	•	❌ Access keys
+	•	❌ Cross-account policies
+	•	❌ S3 buckets
+	•	❌ GitLab resources
+	•	❌ Dynatrace resources
+
+This is purely identity + secret enablement, which is exactly correct.
+
+⸻
+
+If you want, next I can:
+	•	Diagram the trust → role → policy → secret flow
+	•	Explain which resources are mutable vs immutable
+	•	Explain what happens during terraform apply vs re-apply
+
+Just say the word.

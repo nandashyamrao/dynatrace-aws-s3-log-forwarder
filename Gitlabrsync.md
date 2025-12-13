@@ -1,0 +1,286 @@
+include:
+  - component: sfgitlab.opr.statefarm.org/sfcomponents/utilities/gitlab-oidc-aws-sts/template@1
+    inputs:
+      gitlab_oidc_role_arn: "arn:aws:iam::190731337505:role/gitlab-ci-s3-reader-role"
+      oidc_expires_in: "900"
+      aws_region: "us-east-1"
+
+stages:
+  - fetch
+
+fetch-and-process-csv:
+  stage: fetch
+  image: registry.sfgitlab.opr.statefarm.org/registry/sfcommon/aws-cli:v2
+  tags:
+    - shared-aws
+
+  variables:
+    PROJECT_BUCKET_NAME: "sf-logpoc-test-dtcsvlookupdata"
+    CSV_KEY: "orgdata.csv"
+    AWS_REGION: "us-east-1"
+    DT_SECRET_NAME: "dtcsvlookup"
+    PE_COMPONENT_EVENTING_SKIP_PRE_BUILD: "true"
+
+  script:
+    # -----------------------------------
+    # 0) Safety flags
+    # -----------------------------------
+    - set -euo pipefail
+
+    # -----------------------------------
+    # TEMP FIX for OIDC template
+    # -----------------------------------
+    - export PE_COMPONENT_EVENTING_COMPONENT_DATA=""
+    - export PE_COMPONENT_EVENTING_CA_CERT=""
+
+    # -----------------------------------
+    # 1) Assume AWS role via OIDC
+    # -----------------------------------
+    - !reference [.gitlab-oidc-aws-sts-credentials, script]
+
+    # -----------------------------------
+    # 2) Download source CSV
+    # -----------------------------------
+    - aws s3 cp "s3://${PROJECT_BUCKET_NAME}/${CSV_KEY}" "./orgdata.csv"
+    - head -n 5 orgdata.csv || true
+
+    # -----------------------------------
+    # 3) Process CSV → canonical working file (WITH header)
+    # -----------------------------------
+    - bash process_csv.sh orgdata.csv servicenow_work.csv
+    - head -n 3 servicenow_work.csv || true
+
+    # -----------------------------------
+    # 3.1) HARD FAIL: Row count validation (input vs processed)
+    # -----------------------------------
+    - |
+      echo "==> HARD validation: row counts (input vs processed)"
+
+      IN_LINES=$(wc -l < orgdata.csv)
+      WORK_LINES=$(wc -l < servicenow_work.csv)
+
+      IN_DATA=$((IN_LINES - 1))
+      WORK_DATA=$((WORK_LINES - 1))
+
+      echo "orgdata.csv data rows        : $IN_DATA"
+      echo "servicenow_work.csv data rows: $WORK_DATA"
+
+      if [ "$IN_DATA" -ne "$WORK_DATA" ]; then
+        echo "FATAL: Row count mismatch after processing"
+        exit 1
+      fi
+
+      echo "PASS: Row counts match ✅"
+
+    # -----------------------------------
+    # 3.15) HARD FAIL: Column count validation (canonical file)
+    # -----------------------------------
+    - |
+      echo "==> HARD validation: column counts (canonical file)"
+      EXPECTED_COLS=18
+
+      HEADER_COLS=$(head -n 1 servicenow_work.csv | awk -F',' '{print NF}')
+      echo "Header columns: $HEADER_COLS (expected $EXPECTED_COLS)"
+
+      if [ "$HEADER_COLS" -ne "$EXPECTED_COLS" ]; then
+        echo "FATAL: Header column count mismatch"
+        exit 1
+      fi
+
+      awk -F',' -v expected="$EXPECTED_COLS" '
+        NR==1 { next }
+        NF != expected {
+          print "FATAL: Column mismatch at line " NR ": expected " expected ", got " NF
+          print $0
+          exit 1
+        }
+      ' servicenow_work.csv
+
+      echo "PASS: Canonical column validation successful ✅"
+
+    # -----------------------------------
+    # 4) Dynatrace variant (NO header)
+    # -----------------------------------
+    - |
+      tail -n +2 servicenow_work.csv > servicenow_dt.csv
+      head -n 2 servicenow_dt.csv || true
+
+    # -----------------------------------
+    # 5) Splunk variant (z_ prefixed header)
+    # -----------------------------------
+    - |
+      awk -F',' '
+        NR==1 {
+          for (i=1;i<=NF;i++) {
+            printf "z_%s", $i
+            if (i<NF) printf ","
+          }
+          printf "\n"
+          next
+        }
+        { print }
+      ' servicenow_work.csv > servicenow_splunk.csv
+      head -n 2 servicenow_splunk.csv || true
+
+    # -----------------------------------
+    # 5.1) HARD FAIL: Row count validation (derived files)
+    # -----------------------------------
+    - |
+      echo "==> HARD validation: row counts (derived files)"
+
+      DT_LINES=$(wc -l < servicenow_dt.csv)
+      SPLUNK_LINES=$(wc -l < servicenow_splunk.csv)
+      WORK_LINES=$(wc -l < servicenow_work.csv)
+
+      WORK_DATA=$((WORK_LINES - 1))
+      SPLUNK_DATA=$((SPLUNK_LINES - 1))
+
+      echo "Expected data rows      : $WORK_DATA"
+      echo "Dynatrace file rows     : $DT_LINES"
+      echo "Splunk file data rows   : $SPLUNK_DATA"
+
+      if [ "$DT_LINES" -ne "$WORK_DATA" ]; then
+        echo "FATAL: Dynatrace row count mismatch"
+        exit 1
+      fi
+
+      if [ "$SPLUNK_DATA" -ne "$WORK_DATA" ]; then
+        echo "FATAL: Splunk row count mismatch"
+        exit 1
+      fi
+
+      echo "PASS: Derived row counts validated ✅"
+
+    # -----------------------------------
+    # 5.15) HARD FAIL: Column count validation (derived files)
+    # -----------------------------------
+    - |
+      echo "==> HARD validation: column counts (derived files)"
+      EXPECTED_COLS=18
+
+      awk -F',' -v expected="$EXPECTED_COLS" '
+        NF != expected {
+          print "FATAL: DT column mismatch at line " NR ": expected " expected ", got " NF
+          print $0
+          exit 1
+        }
+      ' servicenow_dt.csv
+
+      SPLUNK_HEADER_COLS=$(head -n 1 servicenow_splunk.csv | awk -F',' '{print NF}')
+      if [ "$SPLUNK_HEADER_COLS" -ne "$EXPECTED_COLS" ]; then
+        echo "FATAL: Splunk header column count mismatch"
+        exit 1
+      fi
+
+      awk -F',' -v expected="$EXPECTED_COLS" '
+        NR==1 { next }
+        NF != expected {
+          print "FATAL: Splunk column mismatch at line " NR ": expected " expected ", got " NF
+          print $0
+          exit 1
+        }
+      ' servicenow_splunk.csv
+
+      echo "PASS: Derived column validation successful ✅"
+
+    # -----------------------------------
+    # 6) Load Dynatrace + rsync secrets (SAME secret)
+    # -----------------------------------
+    - |
+      SECRET_JSON=$(aws secretsmanager get-secret-value \
+        --region "$AWS_REGION" \
+        --secret-id "$DT_SECRET_NAME" \
+        --query 'SecretString' \
+        --output text)
+
+      export CLIENT_ID=$(echo "$SECRET_JSON" | jq -r '.client_id')
+      export CLIENT_SECRET=$(echo "$SECRET_JSON" | jq -r '.client_secret')
+      export GRANT_TYPE=$(echo "$SECRET_JSON" | jq -r '.grant_type')
+      export RESOURCE=$(echo "$SECRET_JSON" | jq -r '.resource')
+      export DT_TOKEN_URL=$(echo "$SECRET_JSON" | jq -r '.dt_token_url')
+      export DT_UPLOAD_URL_TEST=$(echo "$SECRET_JSON" | jq -r '.dt_upload_url_test')
+      export DT_UPLOAD_URL_PROD=$(echo "$SECRET_JSON" | jq -r '.dt_upload_url_prod')
+
+    # -----------------------------------
+    # 7) OAuth token
+    # -----------------------------------
+    - |
+      ACCESS_TOKEN=$(
+        curl -sS -X POST "$DT_TOKEN_URL" \
+          -d "client_id=${CLIENT_ID}" \
+          -d "client_secret=${CLIENT_SECRET}" \
+          -d "grant_type=${GRANT_TYPE}" \
+          -d "resource=${RESOURCE}" \
+        | jq -r '.access_token'
+      )
+      [ -n "$ACCESS_TOKEN" ] && [ "$ACCESS_TOKEN" != "null" ]
+
+    # -----------------------------------
+    # 8) Prepare lookup request
+    # -----------------------------------
+    - |
+      cat >/tmp/request.json <<'EOF'
+      {
+        "displayName": "SF ServiceNow Team Map",
+        "description": "ServiceNow team directory for enrichment",
+        "lookupField": "solma_id",
+        "filePath": "/lookups/sn/costcenter",
+        "parsePattern": "LD:solma_id ',' LD:ci_name ',' LD:area_name ',' LD:director_alias ',' LD:manager_alias ',' LD:product_name ',' LD:product_suite_name ',' LD:tier ',' LD:wg_name ',' LD:costing_id ',' LD:exec_alias ',' LD:manager_name ',' LD:director_name ',' LD:exec_name ',' LD:last_updated ',' LD:platforms ',' LD:tech_owner_alias ',' LD:tech_owner_name",
+        "overwrite": true
+      }
+      EOF
+
+    # -----------------------------------
+    # 9) Upload to Dynatrace
+    # -----------------------------------
+    - |
+      curl -sS -X POST "$DT_UPLOAD_URL_TEST" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -F "content=@servicenow_dt.csv" \
+        -F "request=@/tmp/request.json;type=application/json" || true
+
+      curl -sS -X POST "$DT_UPLOAD_URL_PROD" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -F "content=@servicenow_dt.csv" \
+        -F "request=@/tmp/request.json;type=application/json" || true
+
+    # -----------------------------------
+    # 10) rsync to Splunk (AWS ONLY, same secret)
+    # -----------------------------------
+    - |
+      echo "==> Preparing rsync prerequisites"
+      (command -v rsync >/dev/null 2>&1) || (yum -y install rsync >/dev/null 2>&1) || true
+      (command -v ssh   >/dev/null 2>&1) || (yum -y install openssh-clients >/dev/null 2>&1) || true
+
+      mkdir -p ~/.ssh
+      chmod 700 ~/.ssh
+
+      echo "$SECRET_JSON" | jq -r '.rsync.ssh_private_key' > ~/.ssh/id_rsa
+      chmod 600 ~/.ssh/id_rsa
+
+      echo "$SECRET_JSON" | jq -r '.rsync.known_hosts' > ~/.ssh/known_hosts
+      chmod 600 ~/.ssh/known_hosts
+
+      RSYNC_AWS_USER=$(echo "$SECRET_JSON" | jq -r '.rsync.aws.user')
+      RSYNC_AWS_HOST=$(echo "$SECRET_JSON" | jq -r '.rsync.aws.host')
+      RSYNC_AWS_DIR=$(echo "$SECRET_JSON" | jq -r '.rsync.aws.dir')
+
+      rsync -avz \
+        -e "ssh -i ~/.ssh/id_rsa -o UserKnownHostsFile=~/.ssh/known_hosts -o StrictHostKeyChecking=yes" \
+        servicenow_splunk.csv \
+        "${RSYNC_AWS_USER}@${RSYNC_AWS_HOST}:${RSYNC_AWS_DIR}/servicenow.csv"
+
+      shred -u ~/.ssh/id_rsa 2>/dev/null || rm -f ~/.ssh/id_rsa
+
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - orgdata.csv
+      - servicenow_work.csv
+      - servicenow_dt.csv
+      - servicenow_splunk.csv
+      - /tmp/request.json
+
+  after_script:
+    - !reference [.gitlab-oidc-aws-sts-credentials, after_script]

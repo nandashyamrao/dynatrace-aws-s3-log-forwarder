@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "title": "AWS WAF Dashboard Notebook (dt.system.bucket = aws_waf)",
+  "description": "Notebook generated from AWS_WAF_Dashboard_Guide_v2.md. Contains Markdown context + DQL tiles/queries.",
+  "cells": [
+    {
+      "type": "markdown",
+      "text": "# \ud83d\udee1\ufe0f AWS WAF Dashboard Guide (Dynatrace Logs + DQL)\n\nThis guide is designed for building a clear, user-friendly **AWS WAF** dashboard in Dynatrace.  \nAll queries below use your ingestion routing filter:\n\n\u2705 **`dt.system.bucket == \"aws_waf\"`**\n\n---\n\n## \u2705 Global Notes (applies to every tile)\n\n- **Data source**: Dynatrace Logs (WAF events parsed into fields like `waf_action`, `waf_uri`, `waf_client_ip`, etc.)\n- **Filter convention** (use in every tile):"
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n  | filter dt.system.bucket == \"aws_waf\"\n  ```\n- **Common WAF action values**: `ALLOW`, `BLOCK`, `COUNT`\n\n---\n\n# \ud83e\udded Section 1 \u2014 Executive Summary (Top-line posture)\n\n## 1. Action Distribution (Counts + %)\n\n**Purpose of tile:**  \nShow the overall traffic decision breakdown (how much is allowed vs blocked).\n\n**What this indicates:**  \nA quick health/security posture view. A sudden rise in **BLOCK %** can indicate an attack, misconfiguration, or new rule rollout."
+    },
+    {
+      "type": "markdown",
+      "text": "dql\nfetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| summarize requests = count() by waf_action\n| fieldsAdd total = sum(requests) over ()\n| fieldsAdd percentage = round(100.0 * requests / total, 2)\n| sort percentage desc\n```\n\n**Recommended visualization:** Donut or stacked bar.\n\n---\n\n## 2. Total Requests (Single Value)\n\n**Purpose of tile:**  \nShow total WAF-observed requests in the selected timeframe.\n\n**What this indicates:**  \nA baseline \u201ctraffic volume\u201d indicator. Use it to compare with blocked volume spikes."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| summarize total_requests = count()"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Single value.\n\n---\n\n## 3. Blocked Requests (Single Value)\n\n**Purpose of tile:**  \nShow total blocked requests in the selected timeframe.\n\n**What this indicates:**  \nAbsolute block volume. Pair it next to total requests to interpret scale."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| filter waf_action == \"BLOCK\"\n| summarize blocked_requests = count()"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Single value.\n\n---\n\n## 4. Block Rate % (Single Value)\n\n**Purpose of tile:**  \nShow the percentage of requests blocked.\n\n**What this indicates:**  \nThe primary exec metric: \u201cWhat % of traffic is hostile or rejected?\u201d"
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| summarize requests = count() by waf_action\n| fieldsAdd total = sum(requests) over ()\n| fieldsAdd blocked = sum(if(waf_action == \"BLOCK\", requests, 0)) over ()\n| fieldsAdd block_rate_pct = round(100.0 * blocked / total, 2)\n| fields block_rate_pct"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Single value (with threshold coloring if desired).\n\n---\n\n# \ud83e\uddf1 Section 2 \u2014 Endpoint Abuse (What\u2019s being targeted)\n\n## 5. Top Blocked URIs (Endpoint Abuse)\n\n**Purpose of tile:**  \nIdentify which endpoints are being attacked/abused.\n\n**What this indicates:**  \nIf one URI dominates blocks, it may indicate scraping, brute force, injection attempts, or bot activity aimed at that endpoint."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| filter waf_action == \"BLOCK\"\n| summarize blocked_requests = count() by waf_uri\n| sort blocked_requests desc\n| limit 20"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Table or bar chart.\n\n---\n\n## 6. URI Allow vs Block (Per Endpoint)\n\n**Purpose of tile:**  \nCompare allowed vs blocked traffic per endpoint.\n\n**What this indicates:**  \nWhich endpoints are both heavily used and heavily attacked. Useful for prioritizing protection and tuning rules."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| summarize requests = count() by waf_uri, waf_action\n| sort requests desc"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Stacked bar (waf_action as series) or table.\n\n---\n\n## 7. URI Block Rate % (Per Endpoint)\n\n**Purpose of tile:**  \nShow which endpoints have the highest **block percentage**, not just raw counts.\n\n**What this indicates:**  \nHelps highlight \u201chigh risk\u201d endpoints even if total traffic is smaller."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| summarize requests = count() by waf_uri, waf_action\n| summarize\n    total = sum(requests),\n    blocked = sum(if(waf_action == \"BLOCK\", requests, 0))\n  by waf_uri\n| fieldsAdd block_rate_pct = round(100.0 * blocked / total, 2)\n| sort block_rate_pct desc\n| limit 20"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Table.\n\n---\n\n# \ud83d\udd27 Section 3 \u2014 Rule Effectiveness (Why did it block?)\n\n## 8. Top Terminating Rule IDs (Blocked)\n\n**Purpose of tile:**  \nShow which rule is actually making the decision to block.\n\n**What this indicates:**  \nWhether managed rules vs custom rules are doing most of the work; helps validate policy and reduce false positives."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| filter waf_action == \"BLOCK\"\n| summarize blocked_requests = count() by waf_terminating_rule_id\n| sort blocked_requests desc\n| limit 20"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Table.\n\n---\n\n## 9. Terminating Rule Types (Blocked)\n\n**Purpose of tile:**  \nShow what \u201ctype\u201d of terminating rules are responsible (e.g., REGULAR, etc.)\n\n**What this indicates:**  \nHigh-level classification of enforcement behavior; helpful when multiple rule-set strategies exist."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| filter waf_action == \"BLOCK\"\n| summarize blocked_requests = count() by waf_terminating_rule_type\n| sort blocked_requests desc"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Bar chart.\n\n---\n\n# \ud83e\uddd1\u200d\ud83d\udcbb Section 4 \u2014 Attacker / Client Insights (Who is doing it?)\n\n## 10. Top Attacking Client IPs (Blocked)\n\n**Purpose of tile:**  \nIdentify IPs with the most blocked requests.\n\n**What this indicates:**  \nRepeat offenders, bot nodes, or abusive clients. Useful for triage and allow/deny lists."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| filter waf_action == \"BLOCK\"\n| summarize blocked_requests = count() by waf_client_ip, waf_country\n| sort blocked_requests desc\n| limit 20"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Table.\n\n---\n\n## 11. Blocked Requests by Country\n\n**Purpose of tile:**  \nHigh-level geographic concentration of blocked traffic.\n\n**What this indicates:**  \nIf a single region spikes, it may indicate region-specific abuse or botnet distribution."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| filter waf_action == \"BLOCK\"\n| summarize blocked_requests = count() by waf_country\n| sort blocked_requests desc\n| limit 20"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Table or bar chart (or map if available).\n\n---\n\n# \ud83c\udf10 Section 5 \u2014 HTTP Characteristics (How are they hitting?)\n\n## 12. Blocked Requests by Method\n\n**Purpose of tile:**  \nSee which HTTP methods are associated with blocks.\n\n**What this indicates:**  \n- High `GET` blocks \u2192 scraping/scanning  \n- High `POST` blocks \u2192 injection/login brute force, etc."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| filter waf_action == \"BLOCK\"\n| summarize blocked_requests = count() by waf_method\n| sort blocked_requests desc"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Bar chart.\n\n---\n\n## 13. Blocked Requests by Host\n\n**Purpose of tile:**  \nShow which hostnames are getting blocked activity.\n\n**What this indicates:**  \nPinpoints which apps/domains are under attack (or misconfigured)."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| filter waf_action == \"BLOCK\"\n| summarize blocked_requests = count() by waf_host\n| sort blocked_requests desc\n| limit 20"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Table.\n\n---\n\n# \ud83d\udd52 Section 6 \u2014 Trend & Spike Detection (When did it happen?)\n\n## 14. Requests Over Time (All Actions)\n\n**Purpose of tile:**  \nTrend total request volume across time.\n\n**What this indicates:**  \nTraffic surges, baseline changes, or sudden drops (pipeline/ingestion issues)."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| summarize requests = count(), interval: 1m"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Time series.\n\n---\n\n## 15. Blocked Requests Over Time\n\n**Purpose of tile:**  \nTrend block activity across time.\n\n**What this indicates:**  \nAttack windows, bot bursts, or new rule deployments."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| filter waf_action == \"BLOCK\"\n| summarize blocked_requests = count(), interval: 1m"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Time series.\n\n---\n\n# \ud83e\uddea Section 7 \u2014 Troubleshooting / Data Quality (Is parsing working?)\n\n## 16. Quick Field Presence Check\n\n**Purpose of tile:**  \nConfirm key parsed fields are present (non-null) for recent logs.\n\n**What this indicates:**  \nValidates pipeline/processor parsing. If this drops, your processor may have stopped matching new log formats."
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| summarize\n    total = count(),\n    uri_present = sum(if(isNotNull(waf_uri), 1, 0)),\n    ip_present  = sum(if(isNotNull(waf_client_ip), 1, 0)),\n    rule_present = sum(if(isNotNull(waf_terminating_rule_id), 1, 0))"
+    },
+    {
+      "type": "markdown",
+      "text": "**Recommended visualization:** Table (single row) or single values.\n\n---\n\n# \u2705 Suggested Dashboard Layout (Practical)\n\n1. **Executive Summary** (tiles 1\u20134)  \n2. **Endpoint Abuse** (tiles 5\u20137)  \n3. **Rule Effectiveness** (tiles 8\u20139)  \n4. **Attacker Insights** (tiles 10\u201311)  \n5. **HTTP Characteristics** (tiles 12\u201313)  \n6. **Trends** (tiles 14\u201315)  \n7. **Data Quality** (tile 16)\n\n---\n\n## \ud83d\udcdd Optional: \u201cDefinition\u201d blurb for users (copy/paste)\n\n- **ALLOW**: Request permitted by WAF evaluation  \n- **BLOCK**: Request denied by WAF evaluation  \n- **COUNT**: Rule matched but only counted (not enforced)\n\n---\n\n\n## \ud83d\udd04 Updated WAF Action Percentage Query (Validated)"
+    },
+    {
+      "type": "dql",
+      "query": "fetch logs\n| filter dt.system.bucket == \"aws_waf\"\n| summarize requests = count(), by:{waf_action}\n| summarize total = sum(requests), data = collectArray(record(waf_action, requests))\n| expand data\n| fieldsAdd waf_action = data[waf_action], requests = data[requests]\n| fieldsAdd percentage = round(100.0 * requests / total, 2)\n| sort percentage desc"
+    }
+  ]
+}

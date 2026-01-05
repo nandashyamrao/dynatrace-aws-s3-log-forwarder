@@ -67,17 +67,11 @@ Sometimes the JSON is valid as a string but *improper for the expected schema*.
 ### How to handle these in Dynatrace 🛠️
 When you encounter “improper” cases, your best tool is **DPL (Dynatrace Pattern Language)** using regex/pattern extraction. Instead of asking the system to “Parse JSON,” you ask it to “Find the pattern that looks like a value.”
 
-> Would you like me to show you how to write a DPL pattern that extracts data from a truncated or single-quoted log?
 
----
 
-## Prompt 🧾
-List more examples and cover all possible cases.
+## To master log ingestion, you have to look at JSON not as a perfect data format, but as a **fragile container** that breaks in specific, predictable ways.
 
-## Response ✅
-To master log ingestion, you have to look at JSON not as a perfect data format, but as a **fragile container** that breaks in specific, predictable ways.
-
-Here are remaining edge cases, structural failures, and “illegal” JSON scenarios you’ll encounter in high-volume AWS and application logging.
+Some edge cases, structural failures, and “illegal” JSON scenarios you’ll encounter in high-volume AWS and application logging.
 
 ---
 

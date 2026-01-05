@@ -1,7 +1,5 @@
 # Dynatrace S3 Log Forwarder JSON Parsing
 
-**Exported:** 1/5/2026 5:54:51  
-**Link:** [https://gemini.google.com/app/e30f5493d61b7e6f?is_sa=1&is_sa=1&android-min-version=301356232&ios-min-version=322.0&campaign_id=bkws&utm_source=sem&utm_source=google&utm_medium=paid-media&utm_medium=cpc&utm_campaign=bkws&utm_campaign=2024enUS_gemfeb&pt=9008&mt=8&ct=p-growth-sem-bkws&gclsrc=aw.ds&gad_source=1&gad_campaignid=20108148196&gbraid=0AAAAApk5BhkhVF95-zVsYhrngQPHsnzZV&gclid=CjwKCAiA3-3KBhBiEiwA2x7FdGEj7DA-oAyZVayZUGk_egXs5ljS2RAHaVFwmnZ8IGCP5qnB3FRKhhoCQSUQAvD_BwE](https://gemini.google.com/app/e30f5493d61b7e6f?is_sa=1&is_sa=1&android-min-version=301356232&ios-min-version=322.0&campaign_id=bkws&utm_source=sem&utm_source=google&utm_medium=paid-media&utm_medium=cpc&utm_campaign=bkws&utm_campaign=2024enUS_gemfeb&pt=9008&mt=8&ct=p-growth-sem-bkws&gclsrc=aw.ds&gad_source=1&gad_campaignid=20108148196&gbraid=0AAAAApk5BhkhVF95-zVsYhrngQPHsnzZV&gclid=CjwKCAiA3-3KBhBiEiwA2x7FdGEj7DA-oAyZVayZUGk_egXs5ljS2RAHaVFwmnZ8IGCP5qnB3FRKhhoCQSUQAvD_BwE)
 
 ## Prompt:
 Explain the cases where it’s a not proper json

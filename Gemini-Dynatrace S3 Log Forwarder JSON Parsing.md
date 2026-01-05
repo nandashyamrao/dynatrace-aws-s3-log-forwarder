@@ -156,19 +156,8 @@ If your log fails the **
 [JSONLint](https://jsonlint.com/)
 ** test, Dynatrace's `jsonPath` and `parse json` functions **will fail** 100% of the time.
 
-**What would you like to explore next?**
 
-1.  **DPL Patterns:** I can show you how to write one DPL pattern that handles _both_ valid and "dirty" JSON (the most resilient way).
-2.  **OpenPipeline:** We can look at how to strip "BOM" characters or replace `NaN` values before the logs hit storage.
-3.  **AWS Lambda Fixes:** If you are using the S3 Forwarder, I can show you the code snippet to "pre-clean" the JSON in the Lambda function.
-
-## Prompt:
-Everything gets dumped in a single field content when arriving in Dynatrace. There starts the challenge.
-
-## Response:
-Exactly. This is the **"Big Blob" Problem**. When the AWS S3 Forwarder pushes data, Dynatrace sees a massive string in the `content` field. If that string isn't "perfect" JSON, your dashboards and AI-alerts stay empty because the parser gives up.
-
-Since we've covered why JSON breaks, let’s look at the **Forensic Taxonomy** of how these "dumped" fields look in the real world and how to handle them.
+Let’s look at the **Forensic Taxonomy** of how these "dumped" fields look in the real world and how to handle them.
 
 * * *
 

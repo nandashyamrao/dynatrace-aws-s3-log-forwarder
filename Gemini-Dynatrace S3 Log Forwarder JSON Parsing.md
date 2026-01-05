@@ -224,11 +224,8 @@ If your log fails the **JSONLint** test, Dynatrace’s `jsonPath` and `parse jso
 
 ---
 
-## Prompt 🧾
-Can the developer do something on their side? To make our ingestion into Dynatrace easier.
 
-## Response ✅
-Absolutely. Fixing issues **at the source** saves platform teams from writing complex and CPU-expensive DQL/DPL later.
+## Fixing issues **at the source** saves platform teams from writing complex and CPU-expensive DQL/DPL later.
 
 ### Developer’s checklist for Dynatrace-friendly logging 👩‍💻👨‍💻
 

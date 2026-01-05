@@ -627,10 +627,10 @@ Would you like me to create a **Grafana-style Dashboard JSON** template that use
 
 This video provides a deep dive into the latest Dynatrace DQL functions like `jsonPath` and `jsonField`, which are the primary tools for interacting with the structured logs we’ve discussed.
 
-## Prompt:
-I like these can u explain to layman.
 
-Exactly. This is the "Big Blob" Problem. When the AWS S3 Forwarder pushes data, Dynatrace sees a massive string in the content field. If that string isn't "perfect" JSON, your dashboards and AI-alerts stay empty because the parser gives up.
+
+
+Example, When the AWS S3 Forwarder pushes data, Dynatrace sees a massive string in the content field. If that string isn't "perfect" JSON, your dashboards and AI-alerts stay empty because the parser gives up.
 
 Since we've covered why JSON breaks, let’s look at the Forensic Taxonomy of how these "dumped" fields look in the real world and how to handle them.
 
@@ -833,11 +833,4 @@ Here is the updated guide. We’ve kept the layman's "Vending Machine" metaphors
 
 * * *
 
-### **Which one should we tackle first?**
 
-I can write the **DQL Query** for any of these specific technical cases. Would you like to see the code for **Case 2 (The Nested Parse)**, since that is the most common technical hurdle?
-
-
-
----
-Powered by [Gemini Exporter](https://www.ai-chat-exporter.com)

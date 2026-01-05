@@ -1,4 +1,4 @@
-# Dynatrace S3 Log Forwarder JSON Parsing
+# Tips for Dynatrace - JSON Parsing
 
 
 ## Prompt:

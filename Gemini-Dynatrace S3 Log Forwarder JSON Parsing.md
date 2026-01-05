@@ -1,10 +1,9 @@
 # Useful Tips for Dynatrace - JSON Parsing
 
 
-## Not proper jsont:
+## Not proper json:
 Cases where it’s a not proper json
 
-## Response:
 When a JSON payload is "improper," it means it has violated the strict syntax rules defined by the **RFC 8259** standard. In the world of Dynatrace and AWS log forwarding, an improper JSON isn't just "messy"—it is essentially invisible to standard analytical functions.
 
 Here is a detailed breakdown of the common cases where JSON fails, why it happens, and the technical "break point."

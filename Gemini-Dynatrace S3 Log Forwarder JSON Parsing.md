@@ -1,4 +1,4 @@
-# Tips for Dynatrace - JSON Parsing
+# Useful Tips for Dynatrace - JSON Parsing
 
 
 ## Prompt:

@@ -1,0 +1,211 @@
+include:
+  - component: sfgitlab.opr.statefarm.org/sfcomponents/utilities/gitlab-oidc-aws-sts/template@1
+    inputs:
+      gitlab_oidc_role_arn: "arn:aws:iam::190731337505:role/gitlab-ci-s3-reader-role"
+      oidc_expires_in: "900"
+      aws_region: "us-east-1"
+
+stages:
+  - fetch
+
+fetch-and-process-csv:
+  stage: fetch
+  image: registry.sfgitlab.opr.statefarm.org/event-management/observability/dynatrace/dt-csvlookup-datapipeline/debian-rsync-awscli:1.0
+  tags:
+    - shared-aws
+
+  variables:
+    PROJECT_BUCKET_NAME: "sf-logpoc-test-dtcsvlookupdata"
+    CSV_KEY: "orgdata.csv"
+    AWS_REGION: "us-east-1"
+
+    # Secret that holds many fields (Dynatrace, ServiceNow, Splunk, etc.)
+    # Must contain: splunk2_sshkey_test, splunk2_sshkey_prod
+    DTCSVLOOKUP_SECRET_ID: "dtcsvlookup"
+
+    # Splunk upload settings
+    SPLUNK_USER: "splunk2"
+    SPLUNK_DEST_DIR: "/opt/splunk/var"
+
+    # Choose which Splunk environment to target: TEST or PROD
+    SPLUNK_ENV: "TEST"
+
+    # Dry run: "true" = validate + simulate, no writes
+    DRY_RUN: "true"
+
+    # Required so the OIDC include doesn't break under set -u in some runners
+    PE_COMPONENT_EVENTING_SKIP_PRE_BUILD: "true"
+
+  script:
+    - |
+      set -euo pipefail
+
+      echo "==> (0) OIDC → AWS creds (from include)"
+      .reference [.gitlab-oidc-aws-sts-credentials, script]
+
+      echo "==> (1) Download CSV from S3"
+      aws s3 ls "s3://${PROJECT_BUCKET_NAME}/" || true
+      aws s3 cp "s3://${PROJECT_BUCKET_NAME}/${CSV_KEY}" "./${CSV_KEY}"
+      wc -l "./${CSV_KEY}" || true
+
+      echo "==> (2) Run processing script → servicenow_final.csv"
+      bash process_csv.sh "./${CSV_KEY}" servicenow_final.csv
+      test -s servicenow_final.csv
+
+      echo "==> (3) Build Splunk servicenow.csv (z_-prefixed header + quoting)"
+      mkdir -p splunk
+
+      awk -v OFS=',' '
+      BEGIN { FS="," }
+      NR==1 {
+        for (i=1; i<=NF; i++) {
+          h=$i
+          gsub(/\r/, "", h)
+          gsub(/^"+|"+$/, "", h)
+          h="z_" h
+          header[i]=h
+          $i=h
+        }
+        print
+        next
+      }
+      NR>1 {
+        for (i=1; i<=NF; i++) {
+          v=$i
+          gsub(/\r/, "", v)
+          gsub(/^"+|"+$/, "", v)
+          if (header[i]=="z_solma_id" || header[i]=="z_tier") {
+            $i=v
+          } else {
+            gsub(/"/, "\"\\"", v)
+            $i="\"" v "\""
+          }
+        }
+        print
+      }' servicenow_final.csv > splunk/servicenow.csv
+
+      echo "==> Splunk file built: splunk/servicenow.csv"
+      head -n 2 splunk/servicenow.csv || true
+
+      echo "==> (4) Create summary.txt (YAML-safe heredoc)"
+      NOW_UTC="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+      IN_LINES="$(wc -l < "./${CSV_KEY}" | tr -d ' ')"
+      OUT_LINES="$(wc -l < servicenow_final.csv | tr -d ' ')"
+      SPLUNK_LINES="$(wc -l < splunk/servicenow.csv | tr -d ' ')"
+
+      cat > summary.txt <<EOF
+dt-csvlookup-datapipeline summary
+timestamp_utc: ${NOW_UTC}
+input_file: ${CSV_KEY}
+orgdata_rows_data: ${IN_LINES}
+servicenow_rows_data: ${OUT_LINES}
+splunk_rows_data: ${SPLUNK_LINES}
+splunk_env: ${SPLUNK_ENV}
+dry_run: ${DRY_RUN}
+EOF
+
+      echo "---- summary.txt ----"
+      cat summary.txt
+
+      echo "==> (5) Load Splunk SSH private key from Secrets Manager"
+      if [[ "${SPLUNK_ENV}" == "PROD" ]]; then
+        SSH_FIELD="splunk2_sshkey_prod"
+      else
+        SSH_FIELD="splunk2_sshkey_test"
+      fi
+
+      SECRET_JSON="$(aws secretsmanager get-secret-value         --region "${AWS_REGION}"         --secret-id "${DTCSVLOOKUP_SECRET_ID}"         --query SecretString         --output text)"
+
+      SSH_PRIVATE_KEY="$(echo "${SECRET_JSON}" | jq -r ".${SSH_FIELD}")"
+
+      if [[ -z "${SSH_PRIVATE_KEY}" || "${SSH_PRIVATE_KEY}" == "null" ]]; then
+        echo "ERROR: Missing ${SSH_FIELD} in secret ${DTCSVLOOKUP_SECRET_ID}"
+        exit 1
+      fi
+
+      echo "==> (6) Start ssh-agent and add key"
+      eval "$(ssh-agent -s)"
+      mkdir -p ~/.ssh
+      chmod 700 ~/.ssh
+
+      KEY_FILE="$(mktemp)"
+      printf '%s\n' "${SSH_PRIVATE_KEY}" > "${KEY_FILE}"
+      chmod 600 "${KEY_FILE}"
+
+      ssh-add "${KEY_FILE}" >/dev/null
+      rm -f "${KEY_FILE}"
+
+      echo "==> Loaded key fingerprint(s):"
+      ssh-add -l || true
+
+      echo "==> (7) Rsync to Splunk (try hosts one-by-one)"
+      TEST_HOSTS=(
+        "xspkdps1r7.opr.test.statefarm.org"
+        "xspkdps1r8.opr.test.statefarm.org"
+        "xspkdps1t5.opr.test.statefarm.org"
+        "xspkdps1t6.opr.test.statefarm.org"
+      )
+
+      PROD_HOSTS=(
+        "xspkdps1p3.opr.statefarm.org"
+        "xspkdps1p2.opr.statefarm.org"
+      )
+
+      if [[ "${SPLUNK_ENV}" == "PROD" ]]; then
+        HOSTS=("${PROD_HOSTS[@]}")
+      else
+        HOSTS=("${TEST_HOSTS[@]}")
+      fi
+
+      RSYNC_SSH_OPTS=(
+        -o BatchMode=yes
+        -o StrictHostKeyChecking=no
+        -o ConnectTimeout=10
+        -o ServerAliveInterval=5
+        -o ServerAliveCountMax=2
+      )
+
+      SUCCESS=0
+      for SPLUNK_HOST in "${HOSTS[@]}"; do
+        echo "Trying Splunk host: ${SPLUNK_HOST}"
+
+        if [[ "${DRY_RUN}" == "true" ]]; then
+          echo "DRY_RUN: ssh connectivity test only..."
+          if ssh "${RSYNC_SSH_OPTS[@]}" "${SPLUNK_USER}@${SPLUNK_HOST}" "echo ok" ; then
+            echo "✅ SSH ok to ${SPLUNK_HOST}"
+          else
+            echo "❌ SSH failed to ${SPLUNK_HOST} (trying next)"
+            continue
+          fi
+        fi
+
+        RSYNC_FLAGS=(-avz --progress)
+        if [[ "${DRY_RUN}" == "true" ]]; then
+          RSYNC_FLAGS+=(--dry-run)
+        fi
+
+        if rsync "${RSYNC_FLAGS[@]}" -e "ssh ${RSYNC_SSH_OPTS[*]}"           "splunk/servicenow.csv"           "${SPLUNK_USER}@${SPLUNK_HOST}:${SPLUNK_DEST_DIR}/" ; then
+          echo "✅ Rsync succeeded to ${SPLUNK_HOST}"
+          SUCCESS=1
+          break
+        else
+          echo "❌ Rsync failed for ${SPLUNK_HOST} (trying next)"
+        fi
+      done
+
+      if [[ "${SUCCESS}" -ne 1 ]]; then
+        echo "ERROR: rsync failed for all Splunk hosts"
+        exit 1
+      fi
+
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - "./${CSV_KEY}"
+      - "servicenow_final.csv"
+      - "splunk/servicenow.csv"
+      - "summary.txt"
+
+  after_script:
+    - .reference [.gitlab-oidc-aws-sts-credentials, after_script]

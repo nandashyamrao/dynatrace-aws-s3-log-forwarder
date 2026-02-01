@@ -1,89 +1,49 @@
-# 📊 Splunk → Dynatrace Grail Migration Reference
+# Splunk to Dynatrace Mapping
 
-This sheet helps map Splunk’s common metadata fields and query patterns into Dynatrace (with Owning Area Buckets).
+## Overview
+This document provides a detailed mapping of fields used in Splunk logs to their corresponding fields in Dynatrace.
 
----
+## Field Mappings
+| Splunk Field    | Dynatrace Field | Description                               |
+|------------------|-----------------|-------------------------------------------|
+| `field1`        | `mapping1`     | Description of field1 mapping             |
+| `field2`        | `mapping2`     | Description of field2 mapping             |
+| `field3`        | `mapping3`     | Description of field3 mapping             |
+| ...              | ...             | ...                                       |
 
-## 🔑 Field Mapping
+## Updated Field Mappings
+| New Splunk Field | New Dynatrace Field | Description                               |
+|------------------|---------------------|-------------------------------------------|
+| `new_field1`    | `new_mapping1`      | New description for new_field1 mapping    |
+| `new_field2`    | `new_mapping2`      | New description for new_field2 mapping    |
 
-| Splunk        | Dynatrace (your setup)                          | Notes                                                                                                                                                                                                 |
-|---------------|-------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Index**     | **Owning Area Bucket** (custom attribute)       | Logical container/grouping. In DT, you enrich logs with `log.bucket=ClaimsApps`, `log.bucket=ITSM`, etc.                                                                                              |
-| **Sourcetype**| **Source Type Attribute** (e.g., `source.type`) | Identifies log format/type. Same role as Splunk sourcetype.                                                                                                                                           |
-| **Source**    | **log.source / dt.source**                      | Original source (e.g., file path, log stream, S3 bucket).                                                                                                                                             |
-| **Host**      | **dt.entity.host / host.name**                  | Host or entity producing the log. Useful for infra-level correlations.                                                                                                                                |
-| **_time**     | **timestamp**                                   | Event time, parsed by Grail. DT always uses `timestamp` as standard.                                                                                                                                  |
-| **_raw**      | **content**                                     | Raw event body in Splunk = `content` field in DT. All extractions/regex happen here.                                                                                                                  |
-| **eventtype** | **Custom Attribute (e.g., log.eventType)**      | Splunk “eventtype” is a saved search or tag. In DT, represent it as an enrichment tag (e.g., `log.eventType="IncidentClosed"`).                                                                       |
-| **host/ip**   | **network.client.ip / network.server.ip**       | Splunk’s `host`/`ip` fields → DT’s structured network attributes (if logs contain IPs).                                                                                                               |
-| **sourceapp** | **dt.entity.process_group / service.name**      | App or service that generated the log. DT automatically enriches if entity detection works; else set a custom attribute.                                                                              |
-| **user**      | **user.name**                                   | If Splunk logs include `user=...`, you can map to `user.name` in DT for analytics.                                                                                                                    |
-| **fields**    | **extracted attributes**                        | In Splunk, KV pairs often become fields. In DT, you use log processing rules to extract into structured attributes.                                                                                    |
-| **tag::xxx**  | **log.tag.xxx / dt.tag.xxx**                    | Splunk “tag” system → represented as log attributes or Grail tags.                                                                                                                                    |
-| **linecount** | **Not needed**                                  | Splunk field for multiline events. DT handles multi-line automatically; no separate field.                                                                                                            |
-| **event_id**  | **dt.event.id (or custom)**                     | Splunk may create `_cd` or unique ID. In DT, you can retain as custom attribute if needed for deduplication or correlation.                                                                            |
-
----
-
-## 🔄 Side-by-Side Query Examples
-
-### Example 1: ITSM Incidents
-
-**Splunk**  
-```spl
-index=itsm sourcetype=sm9_incident "Ticket Closed"
+## Query Examples
+### Example Query 1
+```sql
+index=splunk-index source="source1"
+ | stats count by field1, field2
 ```
 
-**Dynatrace DQL**  
-```dql
-fetch logs
-| filter log.bucket == "itsm"
-| filter source.type == "sm9_incident"
-| filter contains(content, "Ticket Closed")
+### Example Query 2
+```sql
+index=splunk-index source="source2"
+ | stats sum(field3) by field4
 ```
 
----
+## Improving Instructions
+1. Ensure that you have the required permissions to access the logs.
+2. Follow the steps outlined below for mapping corresponding fields...
 
-### Example 2: Filter by Host and Time
+### Step 1: Log in to Splunk
+- Access the Splunk dashboard using your credentials.
 
-**Splunk**  
-```spl
-index=app_logs sourcetype=web host=web01 earliest=-15m
-```
+### Step 2: Navigate to the Log Reports
+- Go to the "Log Reports" section in the menu.
 
-**Dynatrace DQL**  
-```dql
-fetch logs
-| filter log.bucket == "app_logs"
-| filter source.type == "web"
-| filter dt.entity.host == "web01"
-| filter timestamp > now() - 15m
-```
+### Formatting Enhancements
+- Use bullet points for easier readability.
+- Apply code blocks for query examples.
+- Add tables to summarize field mappings clearly.
 
----
-
-### Example 3: Extracting Fields
-
-**Splunk**  
-```spl
-index=security sourcetype=aws:cloudtrail | rex "userName=(?<user>[^ ]+)"
-```
-
-**Dynatrace DQL**  
-```dql
-fetch logs
-| filter log.bucket == "security"
-| filter source.type == "aws:cloudtrail"
-| parse content, "userName=* user:LD"
-```
-
----
-
-## ✅ Key Takeaways
-- Splunk **Index** → DT **Owning Area Bucket**.  
-- Splunk **Sourcetype** → DT **Source Type Attribute**.  
-- Splunk **_raw** → DT **content**.  
-- Splunk **_time** → DT **timestamp**.  
-- Everything else becomes a **log attribute** in DT.  
-
----
+## Conclusion
+This mapping will help in efficiently transforming Splunk logs into a format suitable for Dynatrace.

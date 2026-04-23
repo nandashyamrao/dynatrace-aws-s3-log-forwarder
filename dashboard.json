@@ -1,0 +1,101 @@
+{
+  "metadata": {
+    "configurationVersions": [5],
+    "clusterVersion": "1.260.0"
+  },
+  "dashboardMetadata": {
+    "name": "WebSphere Enterprise Performance & Logs HUD",
+    "shared": true,
+    "owner": "Platform Engineering",
+    "tags": ["WebSphere", "SRE", "Migration"],
+    "dashboardFilter": {
+      "timeframe": "now-2h",
+      "managementZone": null
+    }
+  },
+  "tiles": [
+    {
+      "name": "SECTION: APPLICATION HEALTH (The HUD)",
+      "tileType": "HEADER",
+      "configured": true,
+      "bounds": { "top": 0, "left": 0, "width": 24, "height": 1 }
+    },
+    {
+      "name": "JVM Heap Usage (Old Gen)",
+      "tileType": "DATA_EXPLORER",
+      "configured": true,
+      "bounds": { "top": 1, "left": 0, "width": 12, "height": 6 },
+      "tileFilter": {},
+      "queries": [
+        {
+          "id": "A",
+          "metric": "builtin:tech.jvm.memory.pool.used",
+          "spaceAggregation": "AVG",
+          "timeAggregation": "DEFAULT",
+          "splitBy": ["dt.entity.process_group_instance"],
+          "filterBy": {
+            "nestedFilters": [
+              { "criterion": "builtin:tech.jvm.memory.pool.name", "operator": "IN", "values": ["Old Gen"] }
+            ],
+            "transformation": "FILTER"
+          }
+        }
+      ],
+      "visualConfig": { "type": "GRAPH_CHART", "variant": "LINE" }
+    },
+    {
+      "name": "Connection Pool - Free Connections",
+      "tileType": "DATA_EXPLORER",
+      "configured": true,
+      "bounds": { "top": 1, "left": 12, "width": 12, "height": 6 },
+      "queries": [
+        {
+          "id": "B",
+          "metric": "builtin:tech.websphere.connectionPool.freeConnectionCount",
+          "splitBy": ["dt.entity.process_group_instance"]
+        }
+      ],
+      "visualConfig": { "type": "GRAPH_CHART", "variant": "AREA" }
+    },
+    {
+      "name": "SECTION: LOG SIGNALS (Critical Errors)",
+      "tileType": "HEADER",
+      "configured": true,
+      "bounds": { "top": 7, "left": 0, "width": 24, "height": 1 }
+    },
+    {
+      "name": "WebSphere Hung Thread Events (WSVR0605W)",
+      "tileType": "DQL",
+      "configured": true,
+      "bounds": { "top": 8, "left": 0, "width": 8, "height": 6 },
+      "dql": "fetch logs | filter matchesValue(log.source, \"*SystemOut.log\") | filter contains(content, \"WSVR0605W\") | summarize count(), by: {bin(timestamp, 10m)}"
+    },
+    {
+      "name": "HTTP 5xx Error Spikes",
+      "tileType": "DQL",
+      "configured": true,
+      "bounds": { "top": 8, "left": 8, "width": 8, "height": 6 },
+      "dql": "fetch logs | filter contains(log.source, \"http_access\") | parse content, \"LD SPACE INT:status SPACE GREEDY\" | filter status >= 500 | summarize count(), by: {bin(timestamp, 1m)}"
+    },
+    {
+      "name": "Activity Log Component Breakdown (XML)",
+      "tileType": "DQL",
+      "configured": true,
+      "bounds": { "top": 8, "left": 16, "width": 8, "height": 6 },
+      "dql": "fetch logs | filter matchesValue(log.source, \"*Activity.log\") | parse content, \"XML(excludeRoot=true):wasm\" | fieldsAdd Component = wasm[componentId] | summarize count(), by: {Component}"
+    },
+    {
+      "name": "SECTION: LIVE LOG STREAM (The Black Box)",
+      "tileType": "HEADER",
+      "configured": true,
+      "bounds": { "top": 14, "left": 0, "width": 24, "height": 1 }
+    },
+    {
+      "name": "Latest SystemOut Errors",
+      "tileType": "DQL",
+      "configured": true,
+      "bounds": { "top": 15, "left": 0, "width": 24, "height": 8 },
+      "dql": "fetch logs | filter matchesValue(log.source, \"*SystemOut.log\") | filter loglevel == \"ERROR\" | fields timestamp, host.name, content | sort timestamp desc | limit 50"
+    }
+  ]
+}
